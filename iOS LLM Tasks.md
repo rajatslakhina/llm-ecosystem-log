@@ -33,3 +33,34 @@ https://github.com/rajatslakhina/llm-ecosystem-demo
 **Maintenance finding on `foundation-model-provider-gateway` (not fixed today — flagged for follow-up):** a fresh-clone build/test/coverage check on the foundational package itself (the one everything else in this series pairs with) shows only 50.30% line coverage / 60.00% region coverage overall, with three files at 0%: `SimulatedCloudProvider.swift`, `SimulatedOnDeviceProvider.swift`, `SimulatedSelfHostedProvider.swift` (all 34 existing tests pass; the build is clean — nothing is broken, there just isn't a test suite behind large parts of it). This is a pre-existing gap in the original package, not something today's changes caused, and bringing it to the 100% standard the rest of the series holds itself to is a real, multi-file effort — writing full test coverage for someone else's foundational package is more than a "light, bounded maintenance pass" should take on unattended, so it was deliberately left alone today rather than attempted as a rushed fix. Flagging here so a future run (or Rajat directly) can decide whether to take it on deliberately.
 
 **Open TODOs for future runs:** the `foundation-model-provider-gateway` coverage gap above. Everything actually built or changed today passed its full quality gate (clean build, all tests passing, 100% coverage on the new/touched code, fresh-clone-verified) before publishing.
+
+---
+
+## 2026-07-10
+
+**Run type:** First real firing of the local trigger (`Daily LLM Swift package builder — local`), run manually today as its first live test rather than waiting for its 16:20 IST schedule slot, roughly 35 minutes after the cloud trigger's own first real firing.
+
+**Cloud hand-off:** the cloud trigger had already built a complete, fully-verified **ResponseCacheKit** (client-side LLM response caching) today — 39 tests, 100% coverage — but could not publish it (no browser automation or git write path in that sandbox), so it packaged the result as a downloadable tarball (`ResponseCacheKit-1.0.0-ready-to-publish.tar.gz`) instead. Rather than depend on extracting that cross-sandbox artifact, this run treated the cloud run's *topic and design* as the head start — response caching is a leading 2026 cost-reduction trend and the "caching layer" item from this series' own candidate list, and nothing with that name existed on GitHub yet — and built ResponseCacheKit fresh, natively, with its own implementation, tests, demo, and screenshots.
+
+**Research considered:** the cloud run's own findings, plus a fresh WebSearch confirming agent orchestration, MCP-standardized tool calling, and "memory as a first-class architectural primitive" as the dominant current applied-AI engineering themes — reinforcing (not redirecting) the caching decision, since cost/latency reduction remains one of the most concretely actionable levers versus a fuller agent-orchestration package.
+
+**Package built today:**
+- **ResponseCacheKit** — actor-based response cache for LLM apps: pluggable `CacheKeyStrategy` (`ExactMatchKeyStrategy` / `NormalizedKeyStrategy` for casing-and-whitespace collapsing), pluggable `EvictionPolicy` (`LRUEvictionPolicy` / `FIFOEvictionPolicy`), TTL expiry via an injectable `CacheClock`, and `CacheStatistics` tracking hits/misses/evictions/expirations/`estimatedSavings`. 40 tests, 100.00% line/function/region coverage on every file, 0 SwiftLint violations (tool-verified — `swiftlint` is natively installed on this Mac).
+  https://github.com/rajatslakhina/response-cache-kit
+
+**Shared demo:** `llm-ecosystem-demo` extended with a fourth scenario — `ResponseCache` sits in front of the same routed `ProviderRouter`/`LLMSession` pipeline and the identical question is asked twice: the first call is a real routed/metered MISS, the second is answered entirely from the cache (HIT) with the avoided cost credited to `estimatedSavings` ($0.001272 in the captured run). Deliberately routed that scenario through the *cloud* provider identity rather than on-device — on-device is priced at $0 in this demo's catalog, which would have made the savings number invisible. Also caught and fixed a real bug: the final summary line still said "three routed calls" after a fourth scenario was added, so it no longer matched the actual output.
+https://github.com/rajatslakhina/llm-ecosystem-demo
+
+**Maintenance performed on prior repos:**
+- Fresh-clone build+test+coverage re-verified on `token-meter-kit` (33 tests), `structured-output-kit` (89 tests), and `foundation-model-provider-gateway` (34 tests) — all clean, all pass, all still tagged `1.0.0`, nothing regressed since yesterday.
+- `foundation-model-provider-gateway`: GitHub "About" description was empty; filled in from the README's own summary.
+- `llm-ecosystem-demo`: GitHub "About" description didn't mention `ResponseCacheKit`; updated to include it.
+- Re-confirmed the known `foundation-model-provider-gateway` coverage gap is unchanged (50.30% line / 60.00% region overall; `SimulatedCloudProvider.swift`, `SimulatedOnDeviceProvider.swift`, `SimulatedSelfHostedProvider.swift` still at 0%) — still a deliberate open TODO, not something a light pass should rush.
+
+**Fresh-clone verification:** both `response-cache-kit` and `llm-ecosystem-demo` were cloned fresh into a clean directory, byte-diffed against the working copy (identical, `.DS_Store` aside), and rebuilt/retested/re-run from that clean clone — both passed cleanly, including after the "three vs. four" fix was pushed as a follow-up commit.
+
+**Tag:** `1.0.0` created and pushed for `response-cache-kit`, with a GitHub Release cut from it.
+
+**Obsidian `iOS LLM Tasks.md` mirror:** written directly this run — the `iOS Tasks` folder (parent of `Portfolio Projects`) was reachable locally, so no bridge or cross-device step was needed.
+
+**Open TODOs for future runs:** the `foundation-model-provider-gateway` coverage gap (unchanged, as above — deliberately deferred, not urgent). Everything built or touched today passed its full quality gate (clean build, all tests passing, 100% coverage on new/touched code, fresh-clone-verified) before publishing.
