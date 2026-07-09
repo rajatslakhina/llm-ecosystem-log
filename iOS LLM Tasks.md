@@ -1,0 +1,33 @@
+# iOS LLM Tasks — Daily Ecosystem Log
+
+Canonical, append-only log of the `rajatslakhina` LLM/Swift ecosystem build series (companion packages around `ProviderGatewayKit`). One entry per run. Never edited or rewritten after the fact — only appended to. Mirrored (when the Mac is reachable) into the Obsidian vault at `DevKnowledge/iOS Tasks/iOS LLM Tasks.md`.
+
+---
+
+## 2026-07-09
+
+**Run type:** This was a live, manually-driven verification pass standing in for the scheduled trigger's first real firing — the trigger (`Daily LLM Swift package builder`, weekdays 15:30 IST) had been configured but had not fired even once yet (first scheduled run: 2026-07-10). The point of today's pass was to execute the full daily playbook for real and catch anything that would otherwise break on the very first unattended run.
+
+**Research considered:** (1) agentic AI, context engineering, and cost/observability as dominant 2026 applied-AI themes; (2) LLM tool-use, function-calling, and structured-output reliability — specifically the shift toward schema-validated decoding instead of ad hoc regex/JSON-mode parsing.
+
+**Packages built today:**
+- **TokenMeterKit** — actor-based token-usage and cost-metering for LLM apps, with `Decimal`-based per-model pricing and a formatted cost report. 33 tests, 100% coverage of the library target.
+  https://github.com/rajatslakhina/token-meter-kit
+- **StructuredOutputKit** — schema-validated JSON decoding for LLM responses: extraction from clean/fenced/prose-embedded replies, schema validation, and a self-repairing retry loop that folds the previous validation error into a follow-up prompt. 89 tests, 100% line/function/region coverage.
+  https://github.com/rajatslakhina/structured-output-kit
+
+**Shared demo:** `llm-ecosystem-demo` extended to route one scenario through `ProviderGatewayKit` for each of three provider identities (on-device, cloud, self-hosted), decode the replies with `StructuredOutputKit` (including a real repair round-trip), and meter every hop with `TokenMeterKit` against explicitly-registered per-provider rates.
+https://github.com/rajatslakhina/llm-ecosystem-demo
+
+**Maintenance performed on prior repos:**
+- `token-meter-kit`: README overstated lint status as an automated "0 violations" pass; corrected to honestly disclose that `swiftlint` isn't installable in this sandbox and the source was hand-verified instead. Also had an empty GitHub "About" description — filled in.
+- `token-meter-kit` and `foundation-model-provider-gateway`: neither had any git tag, despite both READMEs instructing consumers to install via `.package(url:..., from: "1.0.0")` — a real defect that silently breaks for any real user, and the exact thing that made today's `llm-ecosystem-demo` build fail on first attempt. Fixed by tagging genuine `1.0.0` GitHub Releases on both.
+- `llm-ecosystem-demo`: its own GitHub "About" description had dropped-character typos from an earlier simulated-typing pass ("StruturedOutputKit", "meterin", "release."); corrected.
+
+**Infrastructure fix (affects all future runs, not just today):** the scheduled trigger's own stored prompt was missing a required "tag a release" step — `llm-ecosystem-demo`'s `Package.swift` depends on each package via `from: "1.0.0"`, which cannot resolve against an untagged repo, and today's build hit exactly that failure. The trigger prompt also still documented the older, slower one-file-at-a-time paste-relay publish method rather than the faster batched `DataTransfer`/upload-manifest method verified repeatedly today. Both were patched directly into the trigger's stored instructions (STEP 6 rewritten with the faster method plus the old one kept as a fallback; new STEP 6a added for tagging; STEP 9 extended to check for missing tags and stale About/README claims during maintenance passes) so tomorrow's first real automated run doesn't repeat either issue.
+
+**Portfolio Projects mirror (Mac, via device bridge):** `TokenMeterKit` (already present from earlier), `StructuredOutputKit` (mirrored today), `LLMEcosystemDemo` (mirrored today) — all three have local git repos with `origin` pointed at their GitHub remotes (push intentionally not attempted from this bridge; it has no outbound network access by design, and GitHub already has the verified content).
+
+**Obsidian `iOS LLM Tasks.md` mirror:** skipped today. Only the `Portfolio Projects` subfolder is connected on this device, not its parent `iOS Tasks` folder where this file is meant to live, so it isn't reachable from this session. This log's canonical copy (this repo) is up to date regardless; connect the `iOS Tasks` folder (or the whole `DevKnowledge` vault) to enable the direct Obsidian mirror in a future run.
+
+**Open TODOs for future runs:** none blocking. Everything built today passed its full quality gate (clean build, all tests passing, 100% coverage, fresh-clone-verified) before publishing.
