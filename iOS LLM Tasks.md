@@ -64,3 +64,36 @@ https://github.com/rajatslakhina/llm-ecosystem-demo
 **Obsidian `iOS LLM Tasks.md` mirror:** written directly this run — the `iOS Tasks` folder (parent of `Portfolio Projects`) was reachable locally, so no bridge or cross-device step was needed.
 
 **Open TODOs for future runs:** the `foundation-model-provider-gateway` coverage gap (unchanged, as above — deliberately deferred, not urgent). Everything built or touched today passed its full quality gate (clean build, all tests passing, 100% coverage on new/touched code, fresh-clone-verified) before publishing.
+
+---
+
+## 2026-07-10 (second run — first real automated firing)
+
+**Run type:** the actual scheduled cron firing (`daily-llm-swift-package-builder--local`, `45 14 * * 1-5`, ~14:45 IST) rather than the earlier manual test pass logged above. Confirmed via `mcp__scheduled-tasks__list_scheduled_tasks`: `lastRunAt` matched this session's start almost exactly.
+
+**Research considered:** the existing candidate list plus what's already built. `rate-limit-kit` exists on GitHub but is a separate, non-`ProviderGatewayKit` article-demo series (no mention of pairing with this ecosystem) — not counted as already covering the "rate-limiter" candidate. Chose **tool/function registry** as the next genuinely unbuilt, valuable complement: `ProviderGatewayKit` already does tool-call round-tripping at the routing layer, but nothing in the ecosystem validates arguments against a real schema or dispatches to registered handlers.
+
+**Package built today:**
+- **ToolRegistryKit** — actor-based tool/function registry and dispatch: `ToolDefinition` (name + description + `StructuredOutputKit.JSONSchema`), `ToolRegistry` actor (`register`/`unregister`/`registeredDefinitions`/`dispatch`), schema validation via `StructuredOutputKit.SchemaValidator` *before* any handler runs, `ToolHandler`/`ClosureToolHandler`, and `ToolDispatchStatistics` broken down by failure kind. Deliberately built as a dependency of `StructuredOutputKit` rather than reinventing a second JSON-value/schema type. 33 tests, 100.00% line/function/region coverage on every file, 0 SwiftLint violations (tool-verified).
+  https://github.com/rajatslakhina/tool-registry-kit
+
+**Notable design finding:** `ProviderGatewayKit` already ships its own minimal, built-in `ToolRegistry`/`ToolCallRequest`/`LLMToolResult` types (string-only results, no schema validation — by its own doc comment, deliberately kept lightweight). `ToolRegistryKit` is a genuine complement, not a duplicate: it adds real `JSONSchema` argument validation and structured `JSONValue` results for host apps that want that rigor. Both packages' READMEs and the shared demo now call this out explicitly, and the demo qualifies both same-named types (`ToolRegistryKit.ToolRegistry` vs the bare `ToolRegistry` `ProviderGatewayKit` also exports) since importing both modules together makes the bare names ambiguous.
+
+**Shared demo:** `llm-ecosystem-demo` extended with a fifth scenario — a routed turn's scripted reply is decoded as a tool-call request; `ToolRegistry.dispatch(_:)` schema-validates the arguments, runs the registered `get_weather` handler, and the result is fed into a *second* routed turn for the model's final, schema-validated answer. Two metered hops, one validated tool call. Total across all five scenarios: $0.002161.
+https://github.com/rajatslakhina/llm-ecosystem-demo
+
+**Maintenance performed on prior repos:**
+- Fresh-clone build+test+coverage re-verified on `foundation-model-provider-gateway` (34 tests), `token-meter-kit` (33 tests), `structured-output-kit` (89 tests), `response-cache-kit` (40 tests) — all clean, all pass, all still tagged, nothing regressed.
+- **Real finding:** `structured-output-kit`'s README claimed `swiftlint` "isn't installable in the sandbox this package was built in" — stale now that `swiftlint` is natively installed on this Mac. A genuine tool pass found a real force-unwrap in `PromptBuilder.render` (`properties[key]!`) that the earlier hand-review had missed. Fixed (iterate sorted `(key, value)` pairs instead of re-indexing — no behavior change, 89 tests still pass, 100% coverage unchanged) and corrected the README. Tagged `1.0.1`.
+- **Real finding:** `foundation-model-provider-gateway` had **no `.gitignore` and no `.swiftlint.yml` at all**, unlike every sibling package. A `git add -A` during this maintenance pass nearly committed the entire `.build/` directory (2388 files) — caught before it was ever pushed, reset, and fixed properly with an explicit `git add` of only the intended files. Added the same `.gitignore`/`.swiftlint.yml` used across the ecosystem and fixed the one genuine line-length violation this surfaced in `CircuitBreaker.init`. No behavior change: 34 tests still pass. Tagged `1.0.1`.
+- `llm-ecosystem-demo`: GitHub "About" description didn't mention `ToolRegistryKit`; updated.
+- Re-confirmed the known `foundation-model-provider-gateway` coverage gap is unchanged (50.30% line / 60.00% region overall) — still a deliberate open TODO, not something a light pass should rush.
+- Two SwiftLint violations remain open in `structured-output-kit` (`function_parameter_count` in `StructuredOutputDecoder`, `cyclomatic_complexity` in `JSONExtractor`) — both need a real refactor, left as a tracked README TODO rather than a rushed unattended change.
+
+**Fresh-clone verification:** `tool-registry-kit` and `llm-ecosystem-demo` were both cloned fresh into a clean directory, byte-diffed against the working copy (identical), and rebuilt/retested/re-run from that clean clone — both passed cleanly. `foundation-model-provider-gateway`'s fix was also independently re-cloned and confirmed `.build/` did not leak into the pushed commit.
+
+**Tags:** `1.0.0` created and pushed for `tool-registry-kit`. `1.0.1` created and pushed for both `structured-output-kit` and `foundation-model-provider-gateway` (maintenance fixes).
+
+**Obsidian `iOS LLM Tasks.md` mirror:** written directly this run.
+
+**Open TODOs for future runs:** the `foundation-model-provider-gateway` coverage gap (unchanged, deliberately deferred). The two remaining `structured-output-kit` SwiftLint violations (parameter count, cyclomatic complexity) needing a real refactor. Everything built or touched today passed its full quality gate before publishing.
