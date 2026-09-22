@@ -3096,3 +3096,118 @@ The 7b paragraph above ends with the `promptCache` stage committed and unpushed.
 **What was and was not done about it.** Nothing was retried again: retrying until green is what the app's own README warns against, and one more pass would not have explained the six failures. The README was corrected in a docs-only commit (`f85d7d1`) to say one pass in seven, and the repository description now says one XCUITest is flaky in the full-suite run and counts 72 packages, 1,076 unit tests in 167 suites, and 97.16%. Nothing was rolled back. The failing test fails without the change, so reverting would not fix it, and whether to revert is the owner's call (`git revert 3b70506`). The cause is still undiagnosed, and no screenshot is recorded when that test fails, which is most of why.
 
 **Open TODOs, updated.** The push item from the entry above is closed. New and first in line: make `testDemoCredentialsReachTheChatScreen` attach a screenshot and the accessibility hierarchy when it fails, since 30 seconds of a screen nobody has seen is the whole diagnosis gap. The rest of the entry above stands.
+
+## 2026-09-22 (CompactionPlannerKit — the trade scenario 70 priced as a saving)
+
+**Topics considered.** No claude-in-chrome cloud check was attempted. It was skipped by design, as in the 09-15 to 09-21 entries, and is stated here rather than implied. A real `WebSearch` on this week's applied-AI engineering found the collision between context compaction and prompt caching to be the live topic. TokenPilot (arXiv 2606.17016, "Cache-Efficient Context Management for LLM Agents") is reported to frame it directly: pruning and eviction mutate the layout, introduce prefix mismatches and invalidate the cache. It is reported to cut cost 61% and 56% in its two modes. A practitioner write-up reports a case where shrinking tool output by 38.4% *raised* the bill by 6.8%, because the compaction invalidated cache hits. None of that was checked beyond the search snippets. The candidate was not invented today: it is the second item on the 09-21 entry's "next candidates" list, a cache-aware compaction chooser. A `grep` of this file's 3,098 lines for "cache-aware compaction", "compaction chooser", "TokenPilot", "compaction schedule" and "compaction policy" found only that candidate line. `git ls-remote` on `compaction-planner-kit`, `cache-aware-compaction-kit`, `compaction-schedule-kit` and `cache-stable-compaction-kit` returned "Repository not found" for all four. The first item on that list, diagnosing the app's UI test, was taken up in 7b.
+
+**`CompactionPlannerKit`** — [github.com/rajatslakhina/compaction-planner-kit](https://github.com/rajatslakhina/compaction-planner-kit), tagged `1.0.0` and `1.0.1`. Scenario 70 measured that every compaction rewrites the head of the history, and a prefix cache can serve nothing behind a rewrite. That makes "when do I compact, and how far down?" a pricing question. The package replays a conversation, a stable prefix plus timed turns, under a compaction policy (a trigger and a target, both in tokens, drop-oldest or summarise, optionally compacting whenever the cache has already lapsed) against a two-breakpoint model of a provider's cache. An actor planner sweeps a grid of policies and answers three questions. `frontier`: which schedules no other beats on both price and history kept. `recommend(minimumMeanHistoryTokens:)`: the cheapest schedule meeting a retention floor, or `.infeasible` with the best achievable, never the nearest miss. `likeForLike`: the cheapest schedule keeping at least as much as a baseline. A `CompactionScheduler` actor applies the chosen policy online, one request at a time. `CacheTerms.compactionPayback` gives the break-even in closed form: a compaction that keeps `K` cached tokens and drops `D` pays for its rewrite after `K(w - r) / (D r)` requests. Zero dependencies; it sits in front of `ContextCompactionKit` and `ProviderGatewayKit`.
+
+**What the demo measured.** Every figure comes from `swift run CompactionPlannerDemo`. The fixture is 48 requests behind a 3,200-token stable prefix, 22,984 history tokens appended, and two pauses longer than a five-minute cache. The budget is 6,000 history tokens, the floor 1,000 and the grid step 250. Token counts are fixture values and prices are illustrative.
+- **Sliding the window every turn costs 2.10x as much as never compacting** ($0.845453 against $0.402882). It compacts 34 times at a 46.55% hit rate. Never compacting is not an option either: it is over budget on 36 of 48 requests.
+- **Payback.** Sliding one 480-token turn off a full 5,500-token window takes **131.8** requests to pay back on explicit terms (1.25x writes, 0.1x reads) and 11.5 on automatic ones. The next compaction comes one request later.
+- **Like for like.** Batching to 3,600 looks **2.65x** cheaper but keeps **17.53%** less history. Holding history fixed:
+  - Nothing keeps as much as the sliding window for less.
+  - Against "compact at 80% of budget to 50%", the planner finds over 6000 -> 2500 +cold, which keeps *more* (3,597 against 3,380) for **20.28%** less.
+  - Against "90% to 70%" it finds a schedule **12.71%** cheaper.
+- **Frontier.** 42 of 462 schedules sit on it, and **the last 10% of kept history costs $0.453108 of the $0.658879 spread**.
+- **Floors.** 3,000 → $0.222424; 4,200 → over 6000 -> 4000 +cold, $0.320864; 5,100 is refused, since the most any in-budget schedule keeps is 5,016.
+- **Summaries.** A summarising sliding window spends $0.322107 on summary calls alone ($1.109315 total), against $0.450516 for the planner's pick.
+- **Terms change the answer.** On automatic terms the nine-minute pause no longer lapses the cache and the pick loses `+cold`.
+- **Scheduler.** The online scheduler agrees with the replay on **48 of 48** decisions; 929 replays in all, every repeat served from the memo.
+
+**A bug the consumer found, the same afternoon.** Scenario 71 asked `likeForLike` about scenario 70's sliding window, and 1.0.0 answered "over 3700 -> 3700, saves 0.00%". On 452-token turns a trigger of 3,700 fires on exactly the requests 3,800 does. The twin won the name tie-break and was reported as a match. That breaks the method's own contract ("the baseline itself when nothing cheaper keeps as much"). **1.0.1** requires a match to be strictly cheaper or keep strictly more history, and no worse on the other. A regression test builds that exact twin. The package's own demo output was byte-identical before and after the fix.
+
+**Gates, all met and tool-verified, on 1.0.1.**
+- `swift build`: **0 diagnostics** on a clean scratch path.
+- **38 tests, 0 failures** (37 on 1.0.0).
+- `llvm-cov`: **100.00% regions, functions and lines across all 9 library files** (190/190, 83/83, 387/387).
+- `swiftlint lint --strict` (0.63.2, real binary): **0 violations in 13 files**, after splitting four long demo lines and one library line rather than raising a limit.
+- 1.0.0 had one uncovered region: a `?? 0` autoclosure behind `max()` on rows that can never be empty. It was replaced with a `reduce`, not excused.
+- **STEP 6b fresh-clone verification passed cleanly for both tags:** 26 tracked files byte-identical, 0 diagnostics, all tests, 100.00% reproduced, lint clean, and the demo's 74 lines identical by `diff`.
+
+**Publishing.** Created with `gh repo create` and no `--license`, since the LICENSE was local. Branch first, tag second. `1.0.1` was tagged on the fix commit. Nothing was force-pushed and no tag was moved; the GitHub description now says 38 tests.
+
+**7a — the shared demo, now 71 scenarios.** [github.com/rajatslakhina/llm-ecosystem-demo](https://github.com/rajatslakhina/llm-ecosystem-demo), commit `48fea69`. Scenario 71 answers the question scenario 70 left open.
+- **The budgets.** `ContextCompactionKit` pins the 1,200-token system message, so scenario 70's 5,000-token budget is a 3,800-token history budget and its batch target of 3,200 leaves 2,000. That was checked in the compactor's source, not assumed.
+- **Part A.** Against both of scenario 70's schedules, **nothing among 930 keeps as much for less**. Both are on the frontier, so scenario 70's 2.11x is a trade: the batch schedule keeps **20.45%** less history.
+- **Part B.** Three frontier schedules lie strictly between them. The halfway pick is over 3700 -> 2800 at $0.104730.
+- **Part C.** It runs slide, halfway and batch through the real `ContextCompactor`, with `CompactionScheduler` making the calls, priced by `PromptCacheKit`'s `CachingSession`. That session plans its own breakpoints and tiers, so it is a second, independent model of the same cache. It reproduces scenario 70's figures **exactly** ($0.224240 at 52.58%, $0.106336 at 79.65%). The two models disagree on absolute cost by 9 to 24% and **rank the three the same way**.
+- **Part D.** A 400-second pause makes compacting on the lapsed cache **7.58%** cheaper for the same history.
+- **Metering.** Pricing is registered for `compaction-planner-host`, metering a real **$0.00306**; running total **$0.2390665 across seventy-one scenarios**. Five count strings updated in the README and one in `EcosystemDemo.swift`, plus a package-table row and entry 71. The GitHub description is updated to 71 / 71 / $0.2390665.
+- **Fresh clone.** **84 tracked files byte-identical**, a clean 190-second release build resolving every dependency from its real tag, lint 0 violations across 76 files. The demo output was **not** identical: **1,420 of 1,422 lines match**. The one difference is a TraceKit span's measured duration in an early scenario (`OK (0ms)` against `OK (1ms)`). That is wall-clock time, not drift, and earlier entries that reported the whole output "identical by diff" were lucky on that line.
+
+**7b — the real app: pushed, green, and the UI flake diagnosed.** [github.com/rajatslakhina/ai-chat-app](https://github.com/rajatslakhina/ai-chat-app), `f85d7d1..2e165bb`, three commits (the last is README-only).
+
+**`compactionPlan` (`4c39b29`).** The stage is owned by `CompactionPlannerKit` and sits in `MetadataPipeline` straight after `promptCache`, on the same run of `SentPrompt`s. It replays the requests the conversation actually sent under the app's own schedule. `PreModelPipeline.compactIfNeeded` compacts to the whole window whenever the prompt overflows, which in history terms is a sliding window at the window minus the reply reserve and the system message. The planner then asks, like for like, whether any schedule keeps as much for less.
+- **Why it only reports.** It changes nothing sent. The package's own measurements say a cheaper schedule keeps less history, and trading what the model sees for a smaller bill is the owner's decision, not a cache optimisation to make silently. That reasoning is in the stage's rationale and in the README.
+- **Outcomes, each tested.**
+  - `.skipped` when no request has provider-reported usage.
+  - `.noOp` when fewer than two requests go to the latest model.
+  - `.noOp` naming the peak history against the budget when the app's schedule compacted nothing. This is the common case at the 128,000-token default.
+  - `.failed` when a request is dated before the one ahead of it, so `ConversationTrace` throws. This is a real failure path: a device clock set backwards between two sends produces it.
+  - `.ran` with five lines: the schedule and what it did, the like-for-like match, what giving up the last tenth of kept history would save (10.8% on the test conversation), how many gaps lapsed the cache, and a scope line.
+- **Only percentages are reported,** because the preset's prices are illustrative and cancel in a ratio.
+- **The like-for-like line always prints the app's own schedule at 0.0%,** by construction: a sliding window at the full budget keeps the longest history that fits on every request, and under 1.0.1 a same-behaviour twin is no longer a match. The implementing agent reports a randomised check of 300 traces finding no exception, which I did not re-run. So a "cheaper" branch could never execute and was not written; the line says why.
+- **Construction decisions.** A request's arrival is its non-system messages the previous request did not carry, compared as a multiset, so turns the app's compactor dropped do not read as the conversation shrinking. A retry that resends identical messages counts as 1 token so its timing still counts. The window reaches the stage through a defaulted `compactionWindow:` parameter, so every other call site compiles unchanged.
+- **Name collision.** `CostEstimatorKit` also defines `CompactionPolicy`. Only the new file and its test import `CompactionPlannerKit`; this is recorded in the README's collision table.
+
+**The UI flake, diagnosed rather than retried (`f903b3c`).** The implementing agent made `testDemoCredentialsReachTheChatScreen` attach a screenshot and `app.debugDescription` when its `chatEmptyState` wait fails. The wait and the assertion were left alone. Four full-suite runs followed:
+- the agent's run, which passed 24/24;
+- my independent run on fresh DerivedData, which **failed** that one test (29.8s) and so was the first failure ever recorded with the screen;
+- a post-fix run, which passed;
+- the fresh-clone verification, which passed.
+
+The attachments overturn the reading the README and the 09-21 entries carried ("the chat opened at 8s and the empty state never appeared"). **The chat never opened.** The screenshot and element tree show the chat list, settled, "No chats yet", with a live `newChatButton`. The activity log shows the tap synthesized 1.6s after sign-in against an element that existed, with the app idle. Frames pulled from the recording with `ffmpeg` show the list already still before the tap and unchanged after it. Starting a chat adds a row before it navigates, and there was no row, so `startChat` never ran: the tap was dropped.
+
+`openChat` now checks for the composer after that tap. Only when there is none **and** the list is still empty does it tap once more, inside a named `XCTContext` activity ("New chat tap was dropped: list still empty, tapping once more") so every dropped tap stays visible in the result bundle. The assertion is unchanged. In the post-fix run the activity fired 0 times, so that pass showed nothing. In the fresh-clone verification of the pushed commit it **fired once**. The first New chat tap landed 1.64s after sign-in, the same interval as the failing run. No composer appeared for 5s and the list stayed empty. The second tap opened the chat, and `chatEmptyState` appeared about a second later: 24/24. That is one observation, not a rate, but it confirms the diagnosis in a clean checkout and shows the recovery working. A README-only commit (`2e165bb`) records it. The README keeps one question open: whether a person who taps New chat that quickly after signing in loses the tap too, which would make it an app issue.
+
+**Gates for 7b, measured by me on fresh DerivedData.**
+- `xcodegen generate` clean; build **0 errors, 0 compiler warnings**. The only `warning:` lines are `appintentsmetadataprocessor` tool notices.
+- **1,102 unit tests in 170 suites, 0 failing** (from 1,076 in 167), in all four runs.
+- UI **24/24** in the agent's run, the post-fix run and the fresh-clone run, 23/24 in the failing one.
+- `swiftlint --strict` **0 violations across 118 files**.
+- Coverage **97.20% (14427/14843) full-suite**, reproduced identically in all four runs, up from 97.16%. The agent measured unit-only at **95.34%** (14152/14843), up from 95.28%; I did not re-run that. The new stage file is at **100% (180/180)**.
+- Secrets: 0 matches for `sk-or-v1-[a-f0-9]{40,}` in all three commits' diffs, and `Secrets.xcconfig` untracked.
+
+**Fresh-clone verification of `f903b3c` passed cleanly.**
+- **269 tracked files byte-identical**, with no `Secrets.xcconfig` in the clone (the example file present, and the project built without the real one) and 0 key matches in the tree.
+- Lint **0 across 118 files**.
+- **TEST SUCCEEDED**: 1,102 unit tests in 170 suites and **24/24 UI** (295.2s), with 0 compiler warnings.
+- Coverage **97.20% (14427/14843)**, exact, with the stage file at 180/180.
+- `2e165bb` changes only the README, so it was not re-run.
+
+**Maintenance.**
+- **Tag audit.** The in-series list from `llm-ecosystem-demo`'s `Package.swift` stands at **71 repos**, and **every one carries a version tag**, today's included. None was missing and none was created.
+- **Drift checks** on two repos that no recent entry had checked, both from fresh `--depth 1` clones:
+  - **`context-compaction-kit`**, chosen because scenario 71 leans on it: **59 tests**, 100.00% regions, functions and lines, lint 0 violations in 14 files.
+  - **`structured-output-kit`**, one of the oldest: **89 tests**, 100.00% on all three, lint 0 in 10 files.
+  - No drift. Both READMEs' test counts are exact and both GitHub descriptions are accurate.
+- **Descriptions.** `llm-ecosystem-demo`'s was corrected to 71 / 71 / $0.2390665. `ai-chat-app`'s was corrected to 73 packages, 1,102 unit tests in 170 suites and 97.20%, and says one XCUITest intermittently drops a tap and that the test now detects and records it.
+
+**Environment.**
+- **GateGuard** denied the first write of every file again: 27 denials this run. Sending every placeholder write for a batch in one message kept the cost to one round.
+- **The PostToolUse hook** is still the broken shell one-liner.
+- **A new trap:** `swift package update <pkg> --scratch-path X` prints usage and changes nothing, because `--scratch-path` is a global option. `swift package --scratch-path X update <pkg>` works. It made the shared demo run 1.0.0 once after 1.0.1 was tagged, which is how the renamed-twin bug showed itself a second time before it was caught.
+- All three lessons are in the vault's memory notes.
+
+**Not done this pass.**
+- No cloud hand-off read, by design.
+- `llm-ecosystem-demo`'s stale "Sample output" block and ASCII architecture diagram were left untouched again.
+- The login screen still says "built on 25 Swift packages" (the count is 73), recorded in the app README rather than changed today.
+- The missing 09-18 entry was not reconstructed.
+- The statistical queue was not touched.
+- The 09-11 coverage-mode anomaly remains open.
+
+**Open TODOs.**
+- **New.** Keep counting the dropped-tap activity across full-suite runs. It fired once in four today, and one firing is an observation, not a rate.
+- **New.** Check on a device whether a real user's quick tap on New chat after sign-in is dropped too.
+- **New.** `CompactionPlannerKit` has no reconcile against real provider usage, and its cache model has two breakpoints and one lifetime; the app stage's percentages inherit both limits.
+- **New.** The app's `compactionPlan` will almost always `.noOp` at the 128,000-token default window. It earns its keep only on long conversations or a smaller window setting.
+- **Still open from 09-21.** The planner in `PromptCacheKit` writes the newest history block on the last request of a conversation. The replayed-turn double-metering suspicion in the app is unresolved. The long 09-17 list is carried forward unverified.
+
+**Next candidates.**
+- **First,** find out why a settled toolbar button drops its first tap about 1.6s after sign-in, and whether users hit it too. The test now records every occurrence.
+- **Second,** a Settings control in the app that lets the owner choose a retention floor for compaction. `compactionPlan` already prices it, and the choice belongs to the owner, not the app.
+- **Third,** reconcile `CompactionPlannerKit`'s replay against real OpenRouter cached-token counts from the app, the way `promptCache` reconciles its layout.
+- **Fourth,** the statistical queue, starting with the three-category total-fixed generalisation, on a run with a large budget.
