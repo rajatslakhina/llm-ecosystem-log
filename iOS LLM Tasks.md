@@ -3236,3 +3236,166 @@ Two things did **not** get fully closed this run, both left open and documented 
 - https://github.com/rajatslakhina/fleet-rollout-kit-demo-app (built by the concurrent process)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 72)
 - https://github.com/rajatslakhina/ai-chat-app (`fleetRollout` stage)
+
+
+## 2026-09-24 — ToolIntegrityKit shipped, both consumers wired, FleetRollout coverage gap closed unexplained
+
+**Context.** Cloud trigger's findings were not read this run (no claude-in-chrome step attempted — the
+local run went straight to fresh WebSearch per the spec's own allowance). Checked
+`llm-ecosystem-log` and `gh repo list rajatslakhina` (200 repos) before picking a topic: the generic
+candidate list in this task's own instructions (agent-loop, rate-limiter, RAG, prompt-template,
+tool-registry, eval/observability, caching, guardrails) is entirely built already, and so are more
+specific variants (semantic-response-cache-kit, hybrid-retrieval-kit, mcp-stateless-client-kit,
+tool-authority-kit). WebSearch for current applied-AI security topics surfaced MCP tool poisoning —
+OWASP's MCP Top 10 codified it as MCP03:2025 in 2025, and CVE-2025-54136 (CVSS 8.8, disclosed July
+2025) confirmed the "rug pull" variant in production: a tool definition approved once by a human or
+host is trusted for the rest of a session, and nothing re-verifies it against what an MCP server
+serves later. Checked `tool-authority-kit` (already built — that's call-time authorization, "may
+this proposed call run") to confirm this was a different, unclaimed axis: definition-integrity
+verification before a call is even proposed.
+
+**Package built: `ToolIntegrityKit`** (https://github.com/rajatslakhina/tool-integrity-kit, tag
+`1.0.0`). Actor-based `ToolIntegrityGate.verify(_:)` fingerprints a tool's description and
+parameter schema separately (SHA-256 via CryptoKit, canonicalized so key order never affects the
+hash) and compares against an approval ledger keyed by name. Five verdicts:
+`newlyApproved`/`trusted` (fingerprint matches, or this is the first sighting), `driftDetected`
+(the rug pull — ledger is NOT auto-updated; only an explicit `reapprove(_:)` moves the baseline),
+`shadowed` (a new, unapproved name is a normalized-Levenshtein near-duplicate of an already-approved
+one — `get_weathr` vs. `get_weather`), and `suspiciousContent` (a `HeuristicDescriptionScanner`
+flags hidden-instruction tags, exfiltration-path hints, and invisible Unicode — checked on every
+call, first sighting included, so a poisoned tool is never auto-approved just for being new).
+
+Two real defects surfaced and were fixed during the build, not masked:
+- A zero-width joiner (U+200D) planted right after an ordinary letter merges into that letter's own
+  extended grapheme cluster — that is the entire point of ZWJ, joining an emoji sequence into one
+  glyph — so a naive `Character`-based `String.contains` silently fails to match a phrase or path
+  hint with one planted in the middle of it. Caught by a test expecting 4 hits and getting 3.
+  Fixed by stripping every invisible scalar (checked via `unicodeScalars`, immune to grapheme
+  clustering) before phrase/path matching, then checking for their presence separately against the
+  untouched original text.
+- Two `?? "null"` / `?? []` fallbacks in `ToolParameterValue`'s canonicalization were provably
+  unreachable (the key being looked up always came from the same dictionary's own `.keys`) —
+  `llvm-cov` correctly reported them as 2 missed regions. Removed the dead branches by iterating
+  `dictionary.sorted { $0.key < $1.key }` directly instead of `keys.sorted()` + re-lookup, rather
+  than writing an impossible test to force coverage.
+
+Quality gates, all tool-verified on this Mac: `swift build` clean (0 warnings). `swift test
+--enable-code-coverage` — 68 tests, 0 failures. `llvm-cov report` — **100.00%** line/function/region
+coverage on every file in the library target (114 regions, 48 functions, 263 lines, 0 missed across
+all three). `swiftlint lint --strict` 0.63.2 — 0 violations, 15 files (two real violations found and
+fixed: a >120-char line in the drift-detected constructor, and the demo's `main()` exceeding the
+50-line function-body limit — split into five named scenario functions). Demo (`ToolIntegrityDemo`)
+run for real, output captured verbatim for the screenshot: approves `get_weather`, re-verifies it
+unchanged (`TRUSTED`), verifies a rug-pulled redefinition (`DRIFT DETECTED — changed: description`,
+ledger confirmed still pinning the original), verifies `get_weathr` against the approved
+`get_weather` (`SHADOWED — 90% similar`), and verifies a brand-new `read_notes` tool with an
+`<IMPORTANT>` tag, an `.ssh`/`id_rsa` path reference and a right-to-left-override character
+(`SUSPICIOUS CONTENT`, 6 patterns). Tag `1.0.0` created and pushed;
+`gh release create` published. Fresh-clone verification (STEP 6b): byte-identical to the working
+copy (`diff -rq`, excluding `.build`/`.git`/`Package.resolved`), clean build, 68/68 tests,
+100.00% coverage — all against the clone, not the working copy.
+
+**7a — llm-ecosystem-demo, scenario 73.** Added `tool-integrity-kit` as a `Package.swift`
+dependency and registered `tool-integrity-host` pricing (real rates, not the default catalog, per
+this repo's own standing rule about silent $0 hops). New scenario: approves `get_weather`
+(`NEWLY APPROVED`), verifies a provider-rewritten redefinition (`DRIFT DETECTED (changed:
+description)`, ledger confirmed still pinning the original via a direct `approvedFingerprint(for:)`
+read), then registers **only** the still-trusted definition with `ToolRegistryKit` and routes a
+real turn through it — the rewritten definition was never a candidate for dispatch. Real metered
+cost: **$0.000213** (15 prompt + 14 completion tokens against `tool-integrity-host`'s registered
+rate). Running total: **$0.2411395 across seventy-three scenarios**, up from $0.2409265 at
+seventy-two. Also fixed a pre-existing `swiftlint --strict` line-length violation in
+`FleetRolloutScenario.swift` (126 chars, over the 120 limit) found while verifying today's lint pass
+— unrelated to today's package, left over from an earlier day, fixed because it blocked the
+required gate. README updated: package table row, package count (72→73), all three "seventy-two"
+mentions in the Quality section, and a new numbered narrative entry (the file's numbered-scenario
+section runs from #1 through #72 split oddly across two locations — some after the "## License"
+heading, a pre-existing structural quirk from this series' history that this run did not attempt to
+reorganize, only extended in place). Build clean, `swiftlint --strict` 0 violations (78 files).
+Fresh-clone verification: byte-identical, clean build (153.07s cold — first resolve after the new
+dependency; the `--scratch-path` build outside iCloud per this repo's own documented fix), demo
+output identical to the working copy's run except the one known TraceKit span-duration line
+(0ms/1ms jitter this repo's own history has already documented — reported honestly, not glossed
+as "identical").
+
+One real environment problem hit and fixed this run: `swift build` against the default
+iCloud-synced `.build` path hung for 20+ minutes with near-zero CPU after dependency resolution
+finished (confirmed via `Package.resolved` — all 74 pins present) — not a network stall, an iCloud
+mtime-churn stall during compilation, exactly the failure mode `llm-ecosystem-demo`'s own README
+documents under "Building from an iCloud-synced folder." Killed the stuck process, re-ran with
+`--scratch-path /tmp/llm-demo-scratch` per that section's own documented fix, and it compiled in
+9.8s. Worth restating here since this run initially tried the default path before remembering the
+repo's own README had the answer.
+
+**7b — ai-chat-app.** New `toolIntegrity` stage wired into `PreModelPipeline`, before
+`chooseModel` — free work, no provider cost. Verifies `DemoTools.calculator` and
+`DemoTools.currentTime` (this app's two real, statically-compiled tools) against the fingerprint
+they were approved under, every turn. Honest scope, stated in both the stage's doc comment and the
+README: those two tools are Swift constants today, not a live MCP source, so nothing in this app
+can actually rewrite them between turns — this stage cannot catch a real rug pull here yet. What it
+genuinely does: the ledger seeds itself from whichever definition `verify(_:)` sees first, every
+later turn is a real fingerprint comparison against that baseline, and the poisoned-content scanner
+runs on every call including the first. New `ToolIntegrityBridge` flattens
+`StructuredOutputKit.JSONSchema` into `ToolIntegrityKit`'s fingerprinting shape, recursively
+(`properties`, `items`), since `ToolIntegrityKit` itself has no dependency on `StructuredOutputKit`.
+
+Gates: `xcodegen generate` clean. `xcodebuild ... test` — **1133 tests, 1 failing** (unit target),
+**24/24 XCUITests**. The one failure is the pre-existing `SnapshotTests/diagnostics()` flake
+already on record from 2026-09-23 — reproduced identically, not diagnosed further, per the standing
+note not to chase it without a large dedicated budget. `swiftlint lint --strict` — **0 violations,
+121 files** (up from 119). Coverage (`SKIP_TEST_RUN=1 COVERAGE_THRESHOLD=0 ./Scripts/coverage.sh`):
+**97.21% (14575/14993)**, up from the 97.15% floor and past the prior 97.20% high-water mark.
+`ToolIntegrityBridge.swift` first measured **82.76% (24/29)** — the stage's own tests used a
+bare-bones schema with no description/properties/required/enum, so four of the bridge's five
+field-carrying branches never ran; closed to **100.00% (29/29)** with a dedicated
+`ToolIntegrityBridgeTests.swift` rather than left open. `PreModelPipeline+ToolIntegrity.swift` read
+**100.00% (55/55)** on the first measurement — its five verdicts are each a real branch of a pure,
+directly-testable `decision(for:toolName:)` function, the same shape `fleetRolloutDecision(_:)`
+established yesterday. Bonus, unexplained: yesterday's open gap in
+`PreModelPipeline+FleetRollout.swift` (`FleetRolloutGate.sessionDevice(defaults:)`, 87.3%) now reads
+**100.00% (55/55)** without this run touching that file — recorded honestly as closed-but-unexplained,
+not claimed as today's fix.
+
+Secrets scan clean before every push (`git diff --cached | grep -oE 'sk-or-v1-[a-f0-9]{40,}'`,
+empty each time). Fresh-clone verification: byte-identical (`diff -rq`, excluding `.build`, `.git`,
+`.xcodeproj`, `DerivedData`, `Secrets.xcconfig`), `xcodegen generate` clean (no `Secrets.xcconfig`
+present — `Config/Base.xcconfig`'s `#include?` is the optional form precisely so a clone without it
+still builds), full `xcodebuild test` against the clone reproduced the working copy exactly: 1133
+tests/1 failing (the same known flake), 24/24 UI tests, and `./Scripts/coverage.sh` read the
+identical **97.21% (14575/14993)** to the line.
+
+**Maintenance (light pass).** Three repos not touched by yesterday's run: `prompt-template-kit`
+(fresh clone, clean build, 59 tests passing, tag `1.0.0` present, GitHub About description
+accurate), `agent-loop-kit` (fresh clone, clean build, 21 tests passing; `git tag` on the shallow
+clone showed nothing, but `git ls-remote --tags` against the live GitHub repo confirmed `1.0.0` is
+genuinely present — shallow clones don't always surface tags outside their fetched depth, a
+false-alarm worth noting so a future run doesn't re-tag something that's already tagged), and
+`tool-registry-kit` (fresh clone, clean build, 33 tests passing, tag `1.0.0` present, description
+accurate). No drift found in any of the three; no fixes needed. Did not have time for a broader
+sweep across the other ~197 repos in the series this run.
+
+**Not done this pass.** `foundation-model-provider-gateway`'s own ~50% coverage gap
+(`SimulatedCloudProvider.swift`, `SimulatedOnDeviceProvider.swift`, `SimulatedSelfHostedProvider.swift`
+at 0%) remains open — not touched this run, per the standing note that it needs a dedicated
+multi-file session, not a light pass. GitHub "About" descriptions were spot-checked only for the
+three maintenance repos, not audited ecosystem-wide.
+
+**Next candidates:** (1) the toolbar-drop-first-tap bug-hunt in ai-chat-app carried over from
+yesterday's log is still open; (2) the Settings control for compaction retention floor is still
+open; (3) reconciling `CompactionPlannerKit`'s replay against real OpenRouter cached-token counts is
+still open; (4) the "statistical queue" idea needing a large time budget is still open. A genuinely
+fresh idea worth flagging for a future run, surfaced by today's research but not pursued: OWASP's
+MCP Top 10 also names "tool shadowing" and "excessive scope creep" as related-but-distinct failure
+modes from what `ToolIntegrityKit` covers — a dedicated `McpCapabilityScopeKit` (bounding what an
+already-approved tool's *effective* capability is allowed to grow to across a session, distinct
+from `ToolAuthorityKit`'s per-call authorization and `ToolIntegrityKit`'s definition-integrity
+check) could be a coherent next package if none of the four carried-over candidates fit a given
+day's time budget.
+
+**Repos:**
+- https://github.com/rajatslakhina/tool-integrity-kit (today's package)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 73)
+- https://github.com/rajatslakhina/ai-chat-app (toolIntegrity stage, 97.21% coverage)
+- https://github.com/rajatslakhina/prompt-template-kit (maintenance, clean)
+- https://github.com/rajatslakhina/agent-loop-kit (maintenance, clean)
+- https://github.com/rajatslakhina/tool-registry-kit (maintenance, clean)
