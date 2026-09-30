@@ -3459,3 +3459,68 @@ Fresh-clone verification: `diff -rq` clean (excluding `.git`, generated `.xcodep
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 76)
 - https://github.com/rajatslakhina/ai-chat-app (`loopGuard` stage, 97.23%)
 - https://github.com/rajatslakhina/token-meter-kit, https://github.com/rajatslakhina/structured-output-kit, https://github.com/rajatslakhina/trace-kit (maintenance, clean)
+
+
+## 2026-09-30 — HedgedRequestKit shipped; wiring it exposed that ai-chat-app never sends the model it chooses
+
+**Topics considered.** No claude-in-chrome cloud hand-off read (not attempted; fresh research only). Yesterday's entry named hedged/speculative requests across providers as considered-not-built. A WebSearch on LLM tail latency this week confirmed it is current. A widely shared write-up ("A simple fix for LLM tail latency", HOAi, discussed on HN) sent every voice-agent request twice and cut worst-case time-to-first-token from 4.2s to 1.2s. Nothing in the series covers the case of a slow call that hasn't failed. ProviderGatewayKit's circuit breaker fails over after a failure and RetryPolicyKit retries after one. Duplicate check: `git ls-remote` found `hedged-request-kit`, `hedge-kit`, `speculative-request-kit` and `request-hedging-kit` all free. `gh repo list` showed no hedging package. A grep of every local package's `Sources` for `hedg|speculativ` matched only prose about hedged *answers* (ClaimConsistencyKit, SourceConflictKit), not request hedging.
+
+**Package built: `HedgedRequestKit`** (https://github.com/rajatslakhina/hedged-request-kit, tag `1.0.0`, release published). The `HedgedExecutor` actor launches the primary `HedgeAttempt` and starts a timer. The first success wins and the rest are cancelled. When the timer fires with an attempt still running, it spends a token from a `HedgeBudget` and launches the next attempt as a *hedge*. An empty budget sets `budgetDenied` and leaves the primary running. When an attempt *fails*, the next one launches at once as a *failover*: it spends no budget, and the hedge clock restarts for it. The delay is `.fixed` or `.percentile` over a bounded `LatencyWindow`. The default `.p95` is clamped to 50ms–5s and uses a 1s fallback until 20 samples exist. The budget is a token bucket: +`ratio` per request, −1 per hedge, capped at `burst`. The point of the budget is that when a provider slows down for everyone, naive hedging doubles spend at exactly the moment it stops helping. Every `HedgeOutcome` records the winner and *why* it was launched (`.primary`/`.hedge`/`.failover`). Timing goes through an injectable `HedgeSleeper`, so the tests use sleepers that fire immediately, never, or only once instead of racing real clocks.
+
+A design gap was caught before the tests were written. In the first draft a failover did not restart the timer, which made the timer-generation check unreachable dead code. Restarting the clock on failover fixed both: the replacement attempt gets its own full delay, and the stale-timer branch is real and tested.
+
+Gates, all tool-verified on this Mac (Swift 6.2.4):
+- `swift build`: 0 warnings.
+- `swift test --enable-code-coverage`: 28 tests, 0 failures, clean on 5 repeated runs.
+- `llvm-cov report`: **100.00%** lines/regions/functions on all 6 library files (234 lines, 88 regions, 49 functions), on the first measurement.
+- `swiftlint lint --strict` 0.63.2: 0 violations, 8 files.
+- Demo (`HedgedRequestDemo`): run for real and captured verbatim into `Screenshots/demo-output.txt` and `demo.svg`, with an identical output hash across 5 runs. Latencies are reported in wide buckets (20ms / 300ms, hedge at 80ms) so jitter cannot change the text. The demo shows six things:
+  - Unhedged traffic: 2 of 10 requests land in the 300ms tail.
+  - The same traffic hedged: both tail requests are won by the backup in under 200ms, for 20% extra requests.
+  - A provider-wide slowdown: a 10%/burst-2 budget pays for 2 hedges and refuses 6, so spend is capped at 25% rather than 100%.
+  - A 429 from the primary fails over at once, not after the 5s hedge delay.
+  - Both attempts fail: `allFailed`.
+  - Adaptive p95: it holds at 120ms while slow samples remain in the window and drops to the 50ms clamp once they are evicted.
+
+Publishing: the first `git push` straight after `gh repo create` returned "Repository not found" even though the repo existed. It was GitHub propagation lag, and a retry succeeded.
+
+Fresh-clone verification (STEP 6b): byte-identical (`diff -rq`), 0 build diagnostics, 28/28 tests, 100.00% coverage, the same demo hash, lint 0.
+
+**7a — llm-ecosystem-demo, scenario 77** (`d4b444a`). Two single-provider `ProviderRouter`s (`hedge-primary-host`, `hedge-backup-host`) each sit behind an `LLMSession`. The primary is wrapped in a scripted-latency `LLMProvider`: 20ms normally and 300ms on its third call. The wrapper's `onTermination` cancels its wait, so a cancelled stream really stops. A `HedgedExecutor` with a fixed 80ms delay and a `HedgeBudget(ratio: 0.2, burst: 1)` runs five routed requests. On q3 the backup hedge wins in under 200ms and the primary is cancelled: 1 hedge in 5 requests, 1 hedge win, 0 denials. Pricing is registered for both hosts: primary **$0.000264** + backup **$0.000066** = **$0.00033**, which is exactly the change in the total. Running total **$0.2436535 across seventy-seven scenarios**, up from $0.2433235. The cancelled primary call is not metered; the README says a real provider may still bill tokens generated before the cancel. My first doc comment called RetryPolicyKit "scenario 16"; I checked the README before committing and corrected it to scenario 11. The demo's hard-coded "seventy-six scenarios" line was also updated. Other gates: build 0 warnings (`--scratch-path /tmp`), `swiftlint --strict` 0 violations on 82 files, and `hedged-request-kit` 1.0.0 pinned in `Package.resolved`. The README got a package table row, five count updates, the current total and narrative #77. The GitHub About text was updated (77 packages, new total). Fresh-clone verification: `diff -rq` identical, clean build, `swiftlint --strict` 0 on 82 files, and demo output **byte-identical** to the working copy's run, TraceKit span line included this time.
+
+**7b — ai-chat-app** (`23465a0`): **`hedgedRequest` recorded as an honest `.skipped`.** The app has nothing independent to hedge *to*:
+- It has one `OpenRouterProvider` and one model on the wire.
+- `ProviderEffectExecutor.streamOnce` pushes SSE deltas to the UI live, so two racing streams would double-write the visible reply.
+- A duplicate call would need its own `QuotaGovernor` reservation.
+
+The skip is recorded at the top of `TurnExecutor.callProvider`, before the idempotency guard, so every path that reaches the provider carries it (executed, replayed, refused, failed), and a turn stopped earlier leaves it unreached. Tests pin all five cases by adding assertions to the existing success, rate-limit, replay and budget-refused `TurnExecutorTests`, plus a new 2-test `HedgedRequestSkipTests`. Stage table: 79 packages. `coversEveryPackage` is updated to 79, and its stale "77" test title was corrected.
+
+**A real finding while looking for a backup route: the model the pipeline chooses is never sent.** `PreModelPipeline.chooseModel` sets `turn.modelID` from Settings or semantic routing (`quick` → `google/gemini-2.5-flash-lite`). But `OpenRouterProvider.makeURLRequest` always sends `configuration.model`, and the main executor's configuration never sets it, so every turn goes to `openai/gpt-4o`. `turn.modelID` reaches only the idempotency key, cost planning and the trace text "answered by …", which can name a model that did not answer. Billing is still right because metering reads the model OpenRouter reports back. This was verified by reading `makeURLRequest` and `Composition.swift` directly, not only from the subagent's report. It was not fixed unattended, because the fix changes which paid model every turn calls, the same reasoning as the 09-28 parallel-tool-call finding. It is recorded as the first README "Remaining work" item and a "What was learned" entry, and filed as a separate task chip.
+
+Gates (clean DerivedData in `/tmp`; `pgrep -fl xcodebuild` checked empty first):
+- `xcodegen generate` clean.
+- `xcodebuild ... test`: **1152 tests in 176 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`**, 0 compiler warnings (the only `warning:` lines are `appintentsmetadataprocessor` notices). The diagnostics snapshots were not re-recorded and passed with the extra stage.
+- `swiftlint --strict` **0 violations, 124 files**.
+- Coverage (`SKIP_TEST_RUN=1 COVERAGE_THRESHOLD=0 ./Scripts/coverage.sh`): **97.23% (14693/15112)**, holding 09-29's 97.23% (14688/15107). `HedgedRequestSkip.swift` 100.00% (1/1). `TurnExecutor+Support.swift` 98.65% (292/296).
+- Secrets scan before push: 0 keys, and `Secrets.xcconfig` was not staged.
+
+README changes: status table (tests, UI, lint, and the coverage headline, which had still read the 09-22 97.20%), stage count 79, a "Hedged request" section, the "What was learned" entry, and two "Remaining work" bullets (send the chosen model; hedging needs a second route first). The GitHub About text was updated (79 packages, 3 explained skips, 1152 tests).
+
+Fresh-clone verification: `diff -rq` clean (excluding `.git`, generated `.xcodeproj`, `DerivedData`, `Secrets.xcconfig`, `.DS_Store`). There is no `Secrets.xcconfig` in the clone. `xcodegen generate` was clean, and the full `xcodebuild test` against the clone gave **1152/1152 in 176 suites, 24/24 UI tests, `** TEST SUCCEEDED **`, 0 compiler warnings**. `swiftlint --strict` was 0 on 124 files. As on 09-28/29, coverage was not re-measured on the clone (`coverage.sh` reads the working copy's DerivedData).
+
+**Maintenance (light pass).** Fresh clones of `retry-policy-kit` (61 tests), `idempotency-kit` (38 tests) and `response-cache-kit` (40 tests). Each builds with 0 diagnostics, passes, reads 100.00% line/region coverage in `llvm-cov`, has tag `1.0.0`, and has an accurate About description. No fixes needed.
+
+**Correction to the standing gateway TODO: it is stale, and has been closed since 2026-09-02.** The 09-24, 09-28 and 09-29 entries (mine included) repeated "`foundation-model-provider-gateway` ~50% coverage, three `Simulated*Provider.swift` at 0%, open TODO". The 2026-09-02 continuation entry already closed it: 72.35% → 98.30%, tests only. Re-measured today from a fresh clone: 0 build diagnostics, **72 tests passing, 98.30% lines (809/823), 95.27% regions**. `SimulatedOnDeviceProvider` and `SimulatedSelfHostedProvider` read 100.00%. `SimulatedCloudProvider` reads **99.35% lines (154/155)** and 95.12% regions, where the 09-02 entry reported all three at 100.00%, yet today's total matches 09-02's 809/823 exactly. This is recorded as observed, not explained. The standing note in the task instructions still carries the old wording; later runs should treat the gateway as covered and drop the TODO. No ecosystem-wide About audit this run.
+
+**Next candidates:**
+1. Send the chosen model in ai-chat-app (above). After that, a hedge to a *different* model, or OpenRouter's `models` fallback list, becomes an independent route, and `hedgedRequest` can move from `.skipped` to real work once losing deltas are held back and the duplicate call is budgeted.
+2. Carried over from 09-29: audit for text comparisons of tool output that inherit AgentLoopKit's unsorted `JSONEncoder`.
+3. Carried over from 09-28: the dropped-parallel-tool-call fix.
+4. Carried over from 09-24: the toolbar dropped-tap question on a device, the compaction retention Settings control, and CompactionPlannerKit vs real cached-token counts.
+
+**Repos:**
+- https://github.com/rajatslakhina/hedged-request-kit (today's package, `1.0.0`)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 77)
+- https://github.com/rajatslakhina/ai-chat-app (`hedgedRequest` skip, model-not-sent finding, 97.23%)
+- https://github.com/rajatslakhina/retry-policy-kit, https://github.com/rajatslakhina/idempotency-kit, https://github.com/rajatslakhina/response-cache-kit (maintenance, clean)
+- https://github.com/rajatslakhina/foundation-model-provider-gateway (re-measured, 98.30%; stale TODO corrected)
