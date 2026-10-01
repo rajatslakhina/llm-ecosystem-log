@@ -3524,3 +3524,66 @@ Fresh-clone verification: `diff -rq` clean (excluding `.git`, generated `.xcodep
 - https://github.com/rajatslakhina/ai-chat-app (`hedgedRequest` skip, model-not-sent finding, 97.23%)
 - https://github.com/rajatslakhina/retry-policy-kit, https://github.com/rajatslakhina/idempotency-kit, https://github.com/rajatslakhina/response-cache-kit (maintenance, clean)
 - https://github.com/rajatslakhina/foundation-model-provider-gateway (re-measured, 98.30%; stale TODO corrected)
+
+## 2026-10-01 — ModelCascadeKit shipped; ai-chat-app records it as an explained skip
+
+**Topics considered.** I did not read the claude-in-chrome cloud hand-off; this run used fresh research only. A WebSearch on applied-AI engineering this week turned up three recent papers on **LLM model cascades**: "Cluster, Route, Escalate" (arXiv 2606.27457), "Is Escalation Worth It? A Decision-Theoretic Characterization of LLM Cascades" (arXiv 2605.06350) and "Conformal Cascade" (arXiv 2607.25018). A cascade tries a cheap model first and pays for a stronger one only when the cheap answer fails a deferral rule. The reported figures are around 97% of frontier accuracy at about a quarter of the cost. No package in the series covers this. `SemanticRouterKit` picks a model from the *question*, ProviderGatewayKit fails over after an *error*, and `HedgedRequestKit` races a *slow* call. None of them judges an answer and climbs. Duplicate check: `git ls-remote` found `model-cascade-kit`, `cascade-kit` and `llm-cascade-kit` all free. `gh repo list` showed no cascade package, and a grep of every local package's `Sources` for `cascade` matched only prose in the ToolAuthorityKit demo.
+
+**Package built: `ModelCascadeKit`** (https://github.com/rajatslakhina/model-cascade-kit, tag `1.0.0`, release published). The `CascadeExecutor` actor walks a ladder of `CascadeTier`s, cheapest first, and returns the first `TierAnswer` a `DeferralRule` accepts. The rules are:
+- `ConfidenceFloor`, with per-tier floors. A missing confidence escalates by default, and a NaN or infinite confidence always escalates instead of crashing the reason formatter.
+- `AnswerCheck`, a named predicate.
+- `AllOf`, where the first objection wins.
+
+Three behaviours separate it from a hand-written `if confidence < 0.8`:
+1. A thrown call (a 429, say) escalates to the next tier instead of failing the request. `CancellationError` still propagates.
+2. A per-request budget skips any tier whose estimated cost no longer fits, and returns the best deferred answer already paid for (`budgetExhausted`).
+3. `FinalTierPolicy` decides whether the last tier is taken unchecked (`acceptedAtFinalTier`, which records the rule's objection) or must pass the rule too (`exhausted`, `isResolved == false`, so the caller should refuse).
+
+`CascadeLedger` turns outcomes into a `CascadeReport`: spend against sending every request to the top tier, and per-tier `escalationYield` and `costPerRescue`. Escalation yield answers the "is escalation worth it" question. An unchecked final-tier answer does not count as a rescue.
+
+Gates, all tool-verified on this Mac (Swift 6.2.4):
+- `swift build`: 0 warnings.
+- `swift test --enable-code-coverage`: 27 tests, 0 failures, clean on 5 repeated runs.
+- `llvm-cov report`: **100.00%** lines/regions/functions on all 4 library files (235 lines, 131 regions, 56 functions), on the first measurement.
+- `swiftlint lint --strict` 0.63.2: 0 violations, 6 files. Two demo lines over 120 columns were split.
+- Demo (`ModelCascadeDemo`): run for real and captured verbatim into `Screenshots/demo-output.txt` and `demo.svg`. The output hash was identical across repeated runs. Five scenarios: 10 mixed queries cost $0.0168 against $0.1000 frontier-only (83% saved); a 429 on the small tier escalates to mid; a $0.0050 budget skips frontier and returns mid's answer; a strict 0.95 frontier floor gives `exhausted`; and traffic beyond every tier gives small-tier yield 0% with the cascade costing **14% more** than frontier-only. That last case is the one the ledger exists to catch.
+
+Tooling note: the `Write` tool's PreToolUse hook failed twice with "API Error … is not valid JSON" (the hook's own validator), so source files were written with Bash heredocs.
+
+Fresh-clone verification (STEP 6b): `diff -rq` identical, 0 build diagnostics, 27/27 tests, 100.00% coverage, the same demo hash, lint 0.
+
+**7a — llm-ecosystem-demo, scenario 78** (`078e5e9`). Three single-provider `ProviderRouter`s (`cascade-small-host` $1/$4, `cascade-mid-host` $3/$12, `cascade-frontier-host` $15/$60 per M tokens) each sit behind an `LLMSession`. Scripted replies carry a self-rated confidence (`"Paris || 0.95"`), which is split into a `TierAnswer`. A `ConfidenceFloor(0.80)` cascade runs four questions: two are accepted at small, one at mid ("7"), and one climbs to frontier ("Kolmogorov"). Frontier is called 1 time in 4, the ledger puts spend 61% below frontier-only, and small-tier yield is 100%. Every tier call is metered, including the deferred ones: $0.000089 + $0.000123 + $0.00039 = **$0.000602**, exactly the change in the total. Running total **$0.2442555 across seventy-eight scenarios**, up from $0.2436535. Two small fixes on the way:
+- `Pricing.rates` lost `private` so the scenario can price its own estimates.
+- My first doc comment called SemanticRouterKit "scenario 8". I checked the README and corrected it to 14 before committing.
+
+Rates are integers on purpose: a `Decimal` built from a `0.1` float literal drifts. Gates: build 0 warnings, `swiftlint --strict` 0, and `model-cascade-kit` 1.0.0 pinned in `Package.resolved`. README: package table row, count updates, current total, narrative #78. The About text was updated. Fresh clone: `diff -rq` identical (excluding ignored `.DS_Store`/`.swiftpm`; a first attempt's `diff` tripped on exactly those and short-circuited the chain, so it was re-run), 0 build diagnostics, the same scenario-78 output and total, lint 0. One cosmetic issue, not fixed: the meter table's fixed 20-column model field truncates `cascade-frontier-host` to `cascade-frontier-hos`.
+
+**7b — ai-chat-app** (`5a61bfe`): **`modelCascade` recorded as an honest `.skipped`.** A cascade needs three things the app lacks:
+- A cheaper tier to start from. Only one model reaches the wire; this is the 09-30 finding that `turn.modelID` is never sent.
+- A finished answer to judge before showing it. Replies stream live, so a cheap answer that gets rejected would already be on screen.
+- A confidence signal. The stream carries no log-probs, and the post-model judges run after delivery.
+
+`ModelCascadeSkip` imports the package and pins the third point with a real call: the linked `ConfidenceFloor` escalates an unrated answer, so a cascade here would climb on every turn and cost more than the top model alone. The skip is recorded next to `hedgedRequest` at the top of `TurnExecutor.callProvider`, so it has the same reach. The same four `TurnExecutorTests` paths assert it (executed, replayed, rate-limit refused, and nil on budget-refused), plus a new 3-test `ModelCascadeSkipTests`. Stage table: 80 packages, `coversEveryPackage` updated to 80, and 76 still do real work. README: status table, stage count, a "Model cascade" section, a "What was learned" entry (a cascade and a live stream want opposite things, so the next attempt should start from the delivery path), and a "Remaining work" bullet. The About text was updated (80 packages, 4 explained skips, 1155 tests); it had said "3 explained skips", which was correct before today.
+
+Gates (clean DerivedData in `/tmp`; `pgrep xcodebuild` checked empty first):
+- `xcodegen generate` clean.
+- `xcodebuild ... test`: **1155 tests in 177 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`**, 0 compiler warnings (the only 3 `warning:` lines are `appintentsmetadataprocessor` notices).
+- `swiftlint --strict` 0 violations. Two lines over 110 columns in the new file were split.
+- Coverage: **97.23% (14702/15121)**, holding 09-30's 97.23% (14693/15112). `ModelCascadeSkip.swift` is at 100.00% (6/6).
+- Secrets scan before push: 0 keys, and `Secrets.xcconfig` was not staged.
+
+Fresh-clone verification: `diff -rq` clean (excluding `.git`, the generated `.xcodeproj`, `DerivedData`, `Secrets.xcconfig` and `.DS_Store`). The only other differences were five local iCloud-duplicate `AIChatApp N.xcodeproj` folders, which are gitignored. There is no `Secrets.xcconfig` in the clone. `xcodegen generate` was clean, `swiftlint --strict` was 0, and the full `xcodebuild test` against the clone gave **1155/1155 in 177 suites, 24/24 UI tests, `** TEST SUCCEEDED **`, 0 compiler warnings**. As on previous runs, coverage was not re-measured on the clone, because `coverage.sh` reads the working copy's DerivedData.
+
+**Maintenance (light pass).** Fresh clones of `token-meter-kit` (33 tests), `structured-output-kit` (89 tests) and `prompt-template-kit` (59 tests): each builds with 0 diagnostics, passes, reads 100.00% lines/regions/functions in `llvm-cov`, has at least tag `1.0.0` (`structured-output-kit` has 1.0.0–1.0.2), lints 0 under `--strict`, and has an accurate About. The two `structured-output-kit` SwiftLint violations carried in July entries are gone (0 today). No fixes were needed. The gateway coverage TODO stays closed (see 09-30).
+
+**Next candidates:**
+1. Still first: send the chosen model in ai-chat-app. It now blocks two stages (`hedgedRequest`, `modelCascade`).
+2. A buffered or provisional reply path in ai-chat-app, which a real cascade needs.
+3. Carried over: the unsorted-`JSONEncoder` audit (09-29), the dropped-parallel-tool-call fix (09-28), and the 09-24 items.
+4. Cosmetic: widen the ecosystem demo's meter model column.
+
+**Repos:**
+- https://github.com/rajatslakhina/model-cascade-kit (today's package, `1.0.0`)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 78)
+- https://github.com/rajatslakhina/ai-chat-app (`modelCascade` skip, 1155 tests, 97.23%)
+- https://github.com/rajatslakhina/token-meter-kit, https://github.com/rajatslakhina/structured-output-kit, https://github.com/rajatslakhina/prompt-template-kit (maintenance, clean)
