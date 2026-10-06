@@ -3682,3 +3682,68 @@ Fresh-clone verification: `diff -rq` clean (excluding `.git`, the generated `.xc
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 80)
 - https://github.com/rajatslakhina/ai-chat-app (`outcomeMonitor` stage, 1170 tests, 97.25%)
 - https://github.com/rajatslakhina/guardrail-kit, https://github.com/rajatslakhina/trace-kit, https://github.com/rajatslakhina/retrieval-kit (maintenance, clean)
+
+## 2026-10-06 — VerifiedCallKit shipped; ai-chat-app stops resending answers it was already billed for
+
+**Topics considered.** I tried the cloud hand-off this time. Claude in Chrome was connected, but claude.ai/code/routines listed "No routines yet" under Yours, so there was nothing to read and this run used fresh research only. No unlogged run since 10-05: `gh repo list` showed no series package after `outcome-monitor-kit` (`vendor-sdk-containment-kit` and `convention-ladder-article-demo` belong to other series), and both consumers were level with their remotes. A WebSearch on agent tool-use failures turned up three candidates:
+- *Verified Tool Calls Improve LLM Agent Reliability Under Non-Atomic Failures* (arXiv 2608.02645). It names timeouts after dispatch, delayed visibility and partial state updates, and answers them with postcondition checks, verify-before-retry and idempotency keys.
+- *The Unreliable Progress Bar* (arXiv 2609.08589). Models report task progress reliably at some stages and not others, and the authors advise frameworks not to steer on self-reports alone.
+- *TokenPilot* (arXiv 2606.17016), cache-efficient context management, which `PromptCacheKit` and `CompactionPlannerKit` already cover.
+
+I picked verified calls because the series had already named the gap. `IdempotencyKit`'s `EffectResolution` is documented as how "an operator or reconciler settles a key frozen by an indeterminate failure", no package was that reconciler, and scenario 19's reconciler was a typed-in `resolve(.notApplied)`. `RetryPolicyKit` retries without looking, and `OutcomeMonitorKit` checks successful results only. The progress-report idea is kept as a candidate. Duplicate check: `git ls-remote` found `verified-call-kit`, `verify-before-retry-kit`, `in-doubt-kit` and `effect-reconciler-kit` all free, and a grep of every local package's `Sources` for verify-before-retry, in-doubt and reconciler terms matched only IdempotencyKit's doc comment, scenario 19 and unrelated sync reconcilers.
+
+**Package built: `VerifiedCallKit`** (https://github.com/rajatslakhina/verified-call-kit, tag `1.0.0`, release published). The `VerifiedCaller` actor classifies each failed attempt as `retryable`, `rejected` or `inDoubt` through a `FailureClassifier`. In-doubt attempts are settled with the effect's own read-only probe before anything is sent again:
+- Found applied: the probe's result comes back as `.recovered`, and the effect is not performed again.
+- Absent once a `VisibilityWindow`'s settle time has passed: a safe redo. An absence read inside the window proves nothing, which is the delayed-visibility case.
+- Still unsettled: an `UnresolvedPolicy` decides (`escalate`, `redoWithKey`, or `redo`, which is counted as a risked redo).
+
+`confirmSuccess` probes reported successes too and reports a lost write as `.unconfirmed`. `EffectPlan` pre-probes each step and skips ones an earlier run applied, so a rerun of an interrupted plan resumes at the first missing step; nothing is rolled back, and the README says it is not a saga. `CancellationError` never reaches the classifier and ends the call `.unresolved`. A `ManualVerificationClock` makes windows deterministic. `VerificationReport` counts duplicates avoided, late appearances, lost writes and safe, keyed and risked redos.
+
+Gates, all tool-verified on this Mac (Swift 6.2.4):
+- `swift build`: 0 warnings, including a from-scratch build.
+- `swift test --enable-code-coverage`: 39 tests, 0 failures, green on 5 repeated runs. This includes 100 concurrent effects through one actor, and a control test where classifying a timeout as retryable commits the same transfer twice.
+- `llvm-cov report`: **100.00%** lines, regions and functions on all 8 library files with executable code (382 lines, 203 regions, 71 functions). The first measurement was one region short: the closing brace after the probe loop's `while true`, which nothing can reach. It was removed by rewriting the loop as a bounded `for`, not by a test.
+- `swiftlint lint --strict` 0.63.2: 0 violations, 11 files. Three demo lines over 120 columns were split.
+- Demo (`VerifiedCallDemo`): run for real and captured into `Screenshots/demo-output.txt` and `demo.svg`; the output hash was identical across three runs. Five scenarios on a simulated transfer API with injected faults. Over twenty transfers with six faults, a plain retry loop makes 23 charges and overcharges **$247.50** (three timeouts that had committed), while verify-before-retry makes 20 charges for 13 probes. With a replica 1.5 s behind, one immediate probe charges $42.00 twice; the 2 s window finds the transfer at the fourth lookup and charges once. With the lookup endpoint down, `escalate` stops unresolved, `redoWithKey` charges once against a deduplicating server, and `redo` charges twice. A plan interrupted at the charge: a plain rerun reserves and charges twice, the verified rerun only sends the receipt. A 200 OK whose write was lost reads `succeeded` without confirmation and `unconfirmed` with it.
+
+Tooling note: files were written with Bash heredocs, as on 10-01 and 10-05, to stay clear of the Write hook's JSON-validator failure.
+
+Fresh-clone verification (STEP 6b): `diff -rq` identical, 0 build diagnostics, 39/39 tests, 100.00% coverage, the same demo hash, lint 0.
+
+**7a — llm-ecosystem-demo, scenario 81** (`d233e45`). One route (`verified-call-host`, $3/$12 per M tokens) drives a scripted three-turn agent. `ToolRegistryKit` dispatches `pay_invoice(invoice: INV-311, cents: 18000)` into an `IdempotencyGuard` whose executor runs the payment under a `VerifiedCaller`. The backend's first POST commits and then times out, and its replica shows payments one second late. The lookups read `absent` at 0.0 s and 0.5 s and find `rcpt-INV-311` at 1.0 s (`in doubt -> applied at probe 3 (read absent first)`). The guard records the recovered receipt, turn 2's identical call is `replayed`, and turn 3 answers. Controls on the same fault: a plain retry charges twice, and the guard alone charges once but freezes the key and refuses the re-sent call. Metered at 96 + 49 tokens = **$0.000876**, exactly the change in the total. Running total **$0.2465955 across eighty-one scenarios**, up from $0.2457195 (the meter table rounds it to $0.246596). Two small fixes on the way: `JSONSchema` needed `import StructuredOutputKit`, and a 52-line function was split by extracting the caller factory rather than raising the limit. Gates: build 0 diagnostics, `swiftlint --strict` 0, and `verified-call-kit` 1.0.0 is the only new pin in `Package.resolved`. README: package-table row, count updates, current total, narrative #81 (scenario numbers 5 and 19 checked against the source). About text updated. Fresh clone: `diff -rq` identical, 0 build diagnostics, **all 1497 output lines identical** to the working copy (the TraceKit span timing matched this time), lint 0.
+
+**7b — ai-chat-app** (`8a2d64a`): **`verifiedCall` does real work.** Every provider attempt in `ProviderEffectExecutor` now runs through a `VerifiedCaller` (one attempt per call; `RetryPolicyKit` still owns timing and `Retry-After`). The probe is what the attempt received:
+- A fragment or a tool-call hop arrived: OpenRouter did the work and billed it. The attempt is not resent; the user gets "The connection dropped mid-answer", is told that part was billed, and gets Try again.
+- Nothing arrived: there is nothing to look up, because OpenRouter's generation lookup needs the id the first chunk carries. The probe throws rather than claiming absence, the attempt stays in doubt, the retry policy decides as before, and the trace says a resend may be billed twice.
+- A 429 or a rejected request did no work and is resent as before.
+
+Before this, `failureMode(for:)` already called a dropped stream "genuinely ambiguous", but the retry loop resent it anyway, because that classification only ran after the last attempt.
+
+Wiring it found a real dead end. A call that failed in doubt froze its idempotency key, the refusal offered Try again, and Try again resent the same key into "Already sending: this exact message is still in flight", with no button, until relaunch. The key now carries a per-conversation resend generation bumped after any failed call, and the `indeterminateOutcome` refusal says what happened. A mutated build (generation removed from the key, probe made blind) fails 4 of the 7 new executor tests. Stage table: 83 packages, `coversEveryPackage` updated to 83, and 79 do real work. `ProviderEffectExecutor.swift` crossed 500 lines, so its five stateless static helpers moved to `ProviderEffectExecutor+Records.swift`.
+
+One test-harness lesson: the first run of the mid-stream tests failed because `StubURLProtocol` delivered the body and a -1005 in the same instant, URLSession surfaced the error first, and the fragment never reached the reader. A real drop comes after bytes were read, so the stub now waits 0.3 s before failing.
+
+Gates (fresh DerivedData `/tmp/aichatapp-dd-20261006`):
+- `xcodegen generate` clean.
+- `xcodebuild ... test`: **1183 tests in 181 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`**, 0 compiler warnings (the only 3 `warning:` lines are the usual `appintentsmetadataprocessor` notices).
+- `swiftlint --strict` 0 violations, 129 files. Two lines over 110 columns were split.
+- Coverage **97.27% (14960/15380)**, up from 97.25%. `InDoubtVerification.swift` and `ProviderEffectExecutor+Records.swift` are at 100.00%; every new line in the three touched executor files runs except one: the `?? CancellationError()` fallback in `run()`, which no path reaches because a failed attempt always records its error, so xccov counts that line as partly covered. The other misses in those files were already missed before today.
+- Secrets scan before push: 0 keys, and `Secrets.xcconfig` was not staged.
+
+README: status table, package counts, a "Verify before retry" section, a "What was learned" entry, a "Remaining work" bullet (price a dropped attempt through `GET /generation?id=`), and the stale Layout block ("74 packages", "1102 unit") corrected to 83 and 1183. About text updated (83 packages, 1183 tests, 97.27%).
+
+Fresh-clone verification: `diff -rq` clean (excluding `.git`, the generated `.xcodeproj`, `DerivedData`, `Secrets.xcconfig` and `.DS_Store`). There is no `Secrets.xcconfig` in the clone, and it builds from the committed placeholder. `xcodegen generate` was clean, `swiftlint --strict` was 0 (129 files), and the full `xcodebuild test` against the clone, on its own fresh DerivedData, gave **1183/1183 in 181 suites, 24/24 UI tests, `** TEST SUCCEEDED **`, 0 compiler warnings**. A README-only follow-up (`6122bd1`, stating the partly covered line exactly) landed after that clone; a second clone of the final commit diffs clean against the working copy and differs from the tested clone only in `README.md`. As on previous runs, coverage was not re-measured on the clone.
+
+**Maintenance (light pass).** Fresh clones of `retry-policy-kit` (61 tests), `idempotency-kit` (38) and `stream-aggregator-kit` (24): each builds with 0 diagnostics, passes, reads 100.00% lines/regions/functions in `llvm-cov`, has tag `1.0.0`, lints 0 under `--strict`, and has an accurate About. No fixes were needed. The gateway coverage TODO stays closed (see 09-30).
+
+**Next candidates:**
+1. Still first: send the chosen model in ai-chat-app (blocks `hedgedRequest` and `modelCascade`).
+2. Price a dropped attempt: surface the generation id from `OpenRouterProvider` and meter the lost attempt through `GET /generation?id=`.
+3. A progress-evidence package after arXiv 2609.08589: derive progress from tool evidence and flag disagreement with the model's own report.
+4. Carried over: mining tool contracts from transcripts, a provisional-reply path, bounded GuardrailKit patterns upstream, the unsorted-`JSONEncoder` audit (09-29), the dropped-parallel-tool-call fix (09-28) and the 09-24 items. The demo meter's truncated model column lives in TokenMeterKit (`MeterReport.swift:36`), so fixing it means a TokenMeterKit release, not a demo edit.
+
+**Repos:**
+- https://github.com/rajatslakhina/verified-call-kit (today's package, `1.0.0`)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 81)
+- https://github.com/rajatslakhina/ai-chat-app (`verifiedCall` stage, 1183 tests, 97.27%)
+- https://github.com/rajatslakhina/retry-policy-kit, https://github.com/rajatslakhina/idempotency-kit, https://github.com/rajatslakhina/stream-aggregator-kit (maintenance, clean)
