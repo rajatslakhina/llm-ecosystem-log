@@ -4115,3 +4115,78 @@ Mutation check after both runs: with `checkLinks` bypassed in `verify`, **7 of t
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 87)
 - https://github.com/rajatslakhina/ai-chat-app (`linkEgress`, 1251 tests, 97.36%)
 - https://github.com/rajatslakhina/restriction-rule-kit, https://github.com/rajatslakhina/confidence-sequence-kit, https://github.com/rajatslakhina/sequential-contrast-kit (maintenance, clean)
+
+## 2026-10-15 — DegenerationGuardKit shipped; ai-chat-app stops reading an answer that has started repeating itself
+
+*The second entry dated 2026-10-15. The entry above is the 10-14 run (LinkEgressKit), resumed and finished at 14:46 today; this is the 10-15 run, which fired at 14:47 and found that run complete and pushed. Two entries on one date have precedent (09-02, 09-07, 09-08, 09-10, 09-21).*
+
+**Topics considered.** I did not open the claude-in-chrome cloud hand-off this run; the runs through 10-15 found claude.ai/code/routines empty or stuck loading, so this run used fresh research only. Searches: this month's LLM application failure modes, agent output-reliability defences on arXiv, and streaming loop detection. Abstracts read from the arXiv export API:
+- *FailureAtlas* (arXiv 2607.17525, July 2026): in multi-provider gateways the most severe failures are silent, "return HTTP 200, pass every standard health check", and need semantic checks.
+- *LZ Penalty* (arXiv 2504.20131): frequency and repetition penalties are "ineffective", with degenerate repetition in up to 4% of generations.
+- *Circular Reasoning* (arXiv 2601.05693): loops in reasoning models are self-reinforcing; statement loops and numerical loops.
+- *ROM* (arXiv 2603.22016) and *CoDE-Stop* (arXiv 2604.04930): early stopping from hidden states or answer confidence, neither available to an API client.
+- Also seen, not built on: *The Autonomy Tax* (arXiv 2603.19423), defence training breaking agents on benign tasks.
+
+The gap: nothing in the series watches the answer text for a loop. `LoopGuardKit` judges tool history, `StreamReleaseKit` holds PII back, `OutputRepairKit` repairs structure. ai-chat-app streams through `ProviderEffectExecutor`, and `OpenRouterProvider.stream` sets `onTermination = { task.cancel() }`, so a client-side guard can stop paying, not just tidy the text. Duplicate check: `git ls-remote` found `degeneration-guard-kit`, `repetition-guard-kit` and `loop-cut-kit` all free; `token-trace-kit`, created today, belongs to another series (it is not in the demo's `Package.swift`).
+
+**Package built: `DegenerationGuardKit`** (https://github.com/rajatslakhina/degeneration-guard-kit, tag `1.0.0`, release published). Two detectors fed one Unicode scalar at a time, so every verdict is chunk-invariant:
+- `VerbatimLoopDetector`: the text ends in at least four copies of one block of up to 512 scalars, covering 120 scalars (200 for blocks under 8: separators and ellipses repeat short blocks). A repetitive block is judged at its smallest period, so `abababab` is not excused by the 120 threshold while `ab` is held to 200.
+- `UnitCycleDetector`: the text ends in four copies of the same run of 1 to 8 sentences or lines, compared after lowercasing, collapsing whitespace and stripping list markers; digits optionally masked (`.reasoning`).
+- `DegenerationGate` (actor), `DegenerationMonitor` (value type), `DegenerationGuard.check`/`salvage` (keeps the text before the second copy, cut moved to a sentence end, then a word end), `DegenerationLedger` (per-model loop rate), and the public `LoopDetector` protocol.
+
+Why four copies: a song that ends on a doubled chorus, a refrain poem and identical table rows all repeat three times legitimately. The corpus has 12 legitimate texts and 9 loops.
+
+Measured while building:
+- `.standard`: 0 of 12 legitimate texts cut, 9 of 9 loops caught; the numerical loop is not caught.
+- `.reasoning` (digits masked) catches the numerical loop and cuts 4 of 12 legitimate texts (times table, JSON records, price list, CSV rows). Pinned by a test and stated in the README: use it for reasoning traces only.
+- Against two loop checks written down from agent tooling: five identical lines in a row, 2 of 9 loops and 1 of 12 legitimate (an empty checklist); word 4-gram density over 0.5, 6 of 9 and 1 of 12 (it misses the newline flood, the numbered loop and Chinese, which has no spaces).
+- 1344 of 1344 chunkings (21 texts, sizes 1 to 64) equal the whole-text verdict.
+- Two real bugs caught by tests: the "2." of a numbered list ended a unit and the cut kept a stray "2." (a soft terminator now ends a unit only once it has a letter); and the verbatim cut landed on a rotated block (". Wait, ... units") and dropped the final period (now aligned).
+- Performance: the first detector updated all 512 period counters per scalar, and the debug demo took 47 s. A per-scalar previous-occurrence chain visits only the periods where the scalar repeats; the demo now takes 2.1 s and the tests 0.74 s instead of 15.7 s. A test compares it with the brute-force version on the corpus and on 600 random small-alphabet texts (220 of them fire).
+- Seven of my test expectations were wrong and were corrected only after reading what the code did: a string I counted as 29 scalars has 30; a `2..<1` range traps on construction; "a b c d e" is 9 scalars, not 10; an 11-scalar CJK sentence is under the 12 minimum; short blocks fire at 200 covered scalars (66 and 33 copies), not at the end; a 39-scalar sentence I counted as 40, detected 2 scalars early because of the ". " rotation; and a guessed fire count.
+
+Gates, all tool-verified (Swift 6.2.4):
+- `swift build` 0 warnings, 0 errors from a fresh scratch path.
+- `swift test --enable-code-coverage`: 44 tests, 0 failures, green on 5 repeated runs.
+- `llvm-cov report`: **100.00%** regions, functions and lines on all 10 library files with code (191 regions, 81 functions, 334 lines; `LoopDetector.swift` is protocol-only).
+- `swiftlint lint --strict` 0.63.2: 0 violations, 18 files.
+- Mutation checks on a scratch copy: no primitive-period rule fails 15 tests; no cut alignment, 4; list numbers ending a unit, 1; no list-marker stripping, 11; three copies instead of four, 12; no lazy run reset crashes the suite. The working copy was never touched (diff identical).
+- All 5 README snippets compiled against the package in a scratch project; the streaming one was run and cut a looping stream to one copy.
+- Demo (`DegenerationGuardDemo`): run for real, 58 lines, captured into `Screenshots/demo-output.txt` and `demo.svg`, output hash `5e9a0f7a...` identical across runs. Seven scenarios: a loop streamed against a 16,384-scalar cap stopped after 192 (16,196 never generated); nine kinds of loop; twelve legitimate texts under both policies; the two baseline checks; the numerical loop; chunk invariance; a ledger over 30 scripted answers.
+
+Fresh-clone verification (STEP 6b): `diff -rq` identical (the working copy also has a gitignored `default.profraw`), 0 build diagnostics, 44/44, 100.00% regions/functions/lines, lint 0, the same demo hash.
+
+**7a — llm-ecosystem-demo, scenario 88** (`1e7ec76`). Two routes with explicit pricing: `degeneration-host` ($1.10/$4.40 per M) and `degeneration-fallback` ($3/$15). The scripted host reply converts the units correctly, then loops "Wait, let me reconsider the units." to 16,384 scalars (its 4,096-token cap at the demo's 4 characters per token). Cut into 16-scalar chunks, a `DegenerationGate` stops after 192 scalars (chunk 12); the turn meters **$0.0002387** instead of **$0.0180499** read to the cap (both on scratch meters). The retry on the fallback route is clean (65 scalars), and a shared `DegenerationLedger` records host 1 of 1, fallback 0 of 1. Metered at **$0.0005537**, exactly the change in the total; running total **$0.2608622 across eighty-eight scenarios**, up from $0.2603085. Assumption, stated in the scenario: only what was read is metered, since a provider stops generating when its stream is cancelled. Gates: build 0 diagnostics, `swiftlint --strict` 0 (93 files), `degeneration-guard-kit` 1.0.0 the only new pin. README (intro count, table row, current-run total, quality counts, narrative item 88) and About text updated. Fresh clone: source identical, 0 build diagnostics, lint 0, **1607 of 1607 output lines identical** (the TraceKit span measured the same on both).
+
+**7b — ai-chat-app** (`2490910`): **`degenerationGuard` does real work.** One `DegenerationMonitor` per model call in `ProviderEffectExecutor.streamOnce`, fed every fragment. On a loop the executor leaves the stream, which cancels the request, and keeps the text before the second copy. The answer is delivered under a `.refused` record ("The answer started repeating itself", what repeated, where reading stopped, Try again), which raises the banner and keeps the cut answer out of the response cache; the resend generation is bumped, as for `progressGate`, so Try again reaches the model instead of the idempotency guard replaying the loop. `.noOp` says how many characters over how many calls were checked; replayed and failed turns record why nothing was checked. Policy `.standard`, because masking digits cuts tables.
+- Learned the hard way: a test asserted that a cut stream records no usage. It passed on the first full run and failed on the second (`18 in / 900 out`): the stub hands over the whole SSE body at once, so the provider's parser can reach the usage on the last event before the cancel lands. A real loop is still being generated when the cancel arrives, so in practice no usage comes. The test now asserts only what is deterministic (the stream's closing text never reached the bubble; exactly four copies did), and the README says the metering gap honestly.
+- `ProviderEffectExecutor.swift` was at exactly SwiftLint's 500-line limit. `failureMode(for:)` and `retryHint(for:)` (pure functions of the error) moved unchanged to `ProviderEffectExecutor+Failures.swift`, and the warning check in `callProvider` became `freshenKeyIfAnsweredUnderWarning` to stay under the 50-line body limit. No limit raised.
+- 8 new tests in `DegenerationGuardStageTests`, including one through `ChatViewModel`: the cut answer is delivered under the banner, and Try again makes one new request instead of a cache hit.
+
+Gates (DerivedData `/tmp/aichatapp-coverage-dd`, checkouts intact):
+- `xcodegen generate` clean.
+- `xcodebuild ... test`: **1259 tests in 193 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`**, 0 compiler warnings (2 `appintentsmetadataprocessor` notices). This was the third full run for the change: the first was stopped to regenerate the project after the lint refactor added a file, and the second failed only the racy assertion above (1258/1259, 24/24 UI).
+- `swiftlint --strict` 0 violations, 140 files.
+- Coverage **97.37% (15575/15996)**, up from 97.36% (15517/15938). `LiveDegenerationGuard.swift` 100.00% (35/35), `ProviderEffectExecutor+Failures.swift` 100.00% (13/13); `ProviderEffectExecutor.swift` 98.09% (359/366) and `TurnExecutor+Support.swift` 98.85% (344/348), every miss on a line this change did not touch (checked against the diff hunks).
+- Secrets scan before push: 0 keys, and `Secrets.xcconfig` was not staged.
+
+README: status table, package count (90; 86 doing real work) and count history, a "Repetition in the answer" section, two "What was learned" entries, three Remaining-work bullets (meter a cut turn through OpenRouter's generation lookup, which the app does not call yet; hold a loop off the screen; a ledger in Diagnostics) and the Layout block. Also corrected a stale sentence: "Of the working 83, 82 run in the send path" had not been updated since 10-12 while the headline said 85; it now reads 86/85. About text updated.
+
+Fresh-clone verification: `diff -rq` identical (excluding `.git`, the generated `.xcodeproj`, `DerivedData`, `Secrets.xcconfig` and `.DS_Store`). There is no `Secrets.xcconfig` in the clone, and it builds from the committed placeholder. `xcodegen generate` was clean, `swiftlint --strict` was 0 (140 files), and the full `xcodebuild test` against the clone, on its own fresh DerivedData (`/tmp/aichatapp-verify-dd-20261015b`), gave **1259/1259 in 193 suites, 24/24 UI tests, `** TEST SUCCEEDED **`, 0 compiler warnings**. As on previous runs, coverage was not re-measured on the clone, because `coverage.sh` reads the working copy's DerivedData.
+
+Mutation check after the gate runs: with the stream check bypassed in `streamOnce` (the mutant never calls `ingest`), **4 of the 8** new tests fail (12 issues); the four that pass cover the failed and replayed paths, the wording and the summary, which do not depend on the stream. Source restored byte for byte (shasum), tree clean.
+
+**Maintenance (light pass).** Took the two named as next in line on the 10-15 LinkEgressKit entry: `prompt-cache-kit` (09-21) and `compaction-planner-kit` (09-22). Fresh clones: each builds with 0 diagnostics, passes (79 and 38 tests, all XCTest; the Swift Testing line read 0 for each, as expected), reads 100.00% regions, functions and lines, lints 0 under `--strict`, has a tag (`1.0.0`; `compaction-planner-kit` also `1.0.1`), and its README test count matches. About texts read cleanly. No fixes were needed. Next in line, ranked the same way (never named in a maintenance paragraph, oldest first): `fleet-rollout-kit` (09-23) and `tool-integrity-kit` (09-24). The gateway coverage TODO stays closed (see 09-30).
+
+**Next candidates:**
+1. New, from today's 7b: meter a cut turn (OpenRouter's generation lookup by the id every SSE event carries); hold a building loop off the live bubble; one `DegenerationLedger` per app shown in Diagnostics.
+2. Carried from the 10-14 run: `LinkStreamGate` in the live bubble; one `EgressLedger` per conversation.
+3. Carried from 10-13: mask the message itself through the vault on its own turn; `StreamRestorer` in the live bubble.
+4. Carried: send the chosen model in ai-chat-app (blocks `hedgedRequest` and `modelCascade`); canonical arguments for `selectionTrust` and `argumentAttribution`; a respelled-resend counter; `HiddenTextStreamFilter` in the live bubble; the `.matching` view for detectors; and the 10-09 list (frame retrieved excerpts, the "Choose another model" replay, extracting from `ProviderEffectExecutor.swift`, pricing a dropped attempt, mining tool contracts, a provisional-reply path, bounded GuardrailKit patterns upstream, the unsorted-`JSONEncoder` audit, the dropped-parallel-tool-call fix, the demo meter's truncated model column, the `JSONValue` name clash).
+5. Ecosystem: semantic-loop detection (rewording loops) needs model internals and is out of reach for an API client; an HTML-aware link companion stays open.
+
+**Repos:**
+- https://github.com/rajatslakhina/degeneration-guard-kit (today's package, `1.0.0`)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 88)
+- https://github.com/rajatslakhina/ai-chat-app (`degenerationGuard`, 1259 tests, 97.37%)
+- https://github.com/rajatslakhina/prompt-cache-kit, https://github.com/rajatslakhina/compaction-planner-kit (maintenance, clean)
