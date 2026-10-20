@@ -4332,3 +4332,5 @@ Next in line, ranked the same way (never named in a maintenance paragraph, oldes
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 90)
 - https://github.com/rajatslakhina/ai-chat-app (`usageRecovery`, 1287 tests, 97.45%)
 - https://github.com/rajatslakhina/tool-call-scheduler-kit, https://github.com/rajatslakhina/loop-guard-kit (maintenance)
+
+**7b fresh-clone result** (recorded 2026-10-20, 09:40 IST, when the run finished): the full `xcodebuild test` against the clone of `8f0e621` gave **1287 tests in 198 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`, 0 compiler warnings**. This is the first full run of the corrected tests, so it is also the gate run for them. The UI phase alone took 93 minutes (5573 s) at load averages of 100 to 450. Coverage was not re-measured on the clone.
