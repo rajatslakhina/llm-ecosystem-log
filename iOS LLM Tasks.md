@@ -4428,3 +4428,5 @@ Next in line, ranked the same way (never named in a maintenance paragraph, oldes
 **Not done.** `llm-ecosystem-demo` and ai-chat-app still pin `usage-recovery-kit` 1.0.0 in their resolved files. Their `from: 1.0.0` allows 1.0.1, and neither passes values near the limits, so behaviour is the same; the next run that updates packages picks it up.
 
 - https://github.com/rajatslakhina/usage-recovery-kit (`1.0.1`)
+
+**2026-10-21 entry, 7b fresh-clone result** (recorded 2026-10-22, 14:08 IST, when that run finished; it lands after the 10-22 entry above because that entry was pushed while the verification was running): the full `xcodebuild test` against the clone of `ca04d00` gave **1295 tests in 199 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`, 0 compiler warnings**, on TokenCalibrationKit 1.1.0, built from the committed `Secrets.example.xcconfig` placeholder. That is the third full run of this change, all green. Coverage was not re-measured on the clone.
