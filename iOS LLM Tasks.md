@@ -4414,3 +4414,17 @@ Next in line, ranked the same way (never named in a maintenance paragraph, oldes
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 91)
 - https://github.com/rajatslakhina/ai-chat-app (`tokenCalibration`, 1295 tests, 97.46%)
 - https://github.com/rajatslakhina/hedged-request-kit, https://github.com/rajatslakhina/model-cascade-kit (maintenance)
+
+## 2026-10-22 — UsageRecoveryKit 1.0.1, the overflow guard carried from 10-19 (follow-up, no new package)
+
+*Not a scheduled run: picked up by hand from the 10-19 session after the 10-21 run had carried the item forward. No new package, and the consumers were not touched.*
+
+**What changed.** 1.0.0 trapped on integer overflow for absurd inputs, for example `TokenPrice(inputDollarsPerMillion: 1e12, ...)` converting to `Int`, a `tokens x price` product, or `maxOutputTokens: Int.max` under a full-billing upstream. 1.0.1 adds `RecoveryLimits` (a billion tokens per count, a dollar per token per price). `TokenPrice`, `TokenRange`, `ObservedCall` and `BilledUsage` refuse larger values with the existing `RecoveryError` case for the field, so no API changed. `TokenPrice.microcents` now splits the price into whole microcents per token and a remainder before multiplying. That is exact (pinned against the direct formula over an 8 x 8 x 7 x 7 grid) and cannot overflow within the limits, and counts are clamped to `0...maximumTokens`. The estimator's byte estimate and the in-flight allowance are held to the cap, and `RecoveryLedger` totals saturate.
+
+**A stale number I shipped.** 1.0.0's `quality.svg` said 48 tests; the suite and README said 49. I had added the reasoning-bound test after generating the image and did not regenerate it. Fixed in 1.0.1.
+
+**Gates** (Swift 6.2.4): build 0 diagnostics; **55 tests** (6 new in `LimitsTests`), 0 failures; **100.00%** regions (207), functions (83) and lines (437) on all 16 library files; `swiftlint --strict` 0 (25 files); demo output byte-identical to the 1.0.0 capture; README snippets compile; sources ASCII. Two mutants (the direct formula, no clamp) both trap in `testTheWorstCaseIsExactAndCountsAreClamped`; that is a crash with signal 5, which my mutation script's assertion count did not see, so I read the exit codes. Tag `1.0.1` with a release on `c65144b`. Fresh clone of the tag: source identical, 0 diagnostics, 55/55, 100.00%, lint 0, demo byte-identical.
+
+**Not done.** `llm-ecosystem-demo` and ai-chat-app still pin `usage-recovery-kit` 1.0.0 in their resolved files. Their `from: 1.0.0` allows 1.0.1, and neither passes values near the limits, so behaviour is the same; the next run that updates packages picks it up.
+
+- https://github.com/rajatslakhina/usage-recovery-kit (`1.0.1`)
