@@ -4334,3 +4334,83 @@ Next in line, ranked the same way (never named in a maintenance paragraph, oldes
 - https://github.com/rajatslakhina/tool-call-scheduler-kit, https://github.com/rajatslakhina/loop-guard-kit (maintenance)
 
 **7b fresh-clone result** (recorded 2026-10-20, 09:40 IST, when the run finished): the full `xcodebuild test` against the clone of `8f0e621` gave **1287 tests in 198 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`, 0 compiler warnings**. This is the first full run of the corrected tests, so it is also the gate run for them. The UI phase alone took 93 minutes (5573 s) at load averages of 100 to 450. Coverage was not re-measured on the clone.
+
+## 2026-10-21 — TokenCalibrationKit shipped (1.0.0, then 1.1.0); ai-chat-app stops counting tokens as characters divided by four
+
+*This run was fired by the scheduler on 2026-10-20 at 22:05 IST and finished on 2026-10-22: the session stalled for hours between turns (load averages 20 to 70, GitHub timing out once at 17 minutes), so it is filed under 10-21, the date most of its work happened. No other run built a package in between: `gh repo list` showed nothing newer than 10-19's `usage-recovery-kit` until `token-calibration-kit` was created.*
+
+**Topics considered.** I did not open the claude-in-chrome cloud hand-off (the runs through 10-19 found claude.ai/code/routines empty or stuck loading). Both consumers were level with their remotes (`52a4101`, `8f0e621`). Searches:
+- This month's agent-reliability writing: nothing dated October and package-shaped beyond what `ToolRegistryKit`, `OutcomeMonitorKit` and `VerifiedCallKit` already cover. *Proxy Confidence* (arXiv 2610.03894, auditing a black-box agent's tool calls with a surrogate's log-probabilities) was considered and not built: OpenRouter returns no log-probabilities for most models this app uses.
+- Streaming tool-call arguments and partial JSON (a Dart package's changelog on quadratic re-parsing and objects that vanish mid-stream): considered and not built; `StreamAggregatorKit` and `StructuredOutputKit` hold the package-shaped parts.
+- Token counting without a tokenizer: blog and library sources agree that a flat 4-characters-per-token rule under-counts CJK 2-4x, code and emoji too, misses per-message framing and tool schemas, and drifts when a model ships a new tokenizer; one post describes a local count with a 600-token margin that the provider rejected (11% off, only for Japanese users). Anthropic's own count endpoint calls its result an estimate. The recurring advice is to reconcile local estimates against the reported usage.
+
+Reading ai-chat-app for the gap: `count / 4` appears in nine places (`ConversationMessage.estimatedTokens`, `SentPrompt.Message`, `PreparedTurn`, the compaction plan, the prompt-cache audit), and those estimates decide compaction, the forecast, the budget hold and `usageRecovery`'s prompt range (held as 3/4 to 3/2 of the estimate). Nothing ever learned from the `prompt_tokens` every call reports. Duplicate check: `git ls-remote` found `token-calibration-kit`, `token-estimate-kit` and `tokenizer-drift-kit` all free; `CostEstimatorKit` learns how wrong a cost forecast was, `WorkloadProfilerKit` derives plans from observed counts, and neither counts a request's text.
+
+**Package built: `TokenCalibrationKit`** (https://github.com/rajatslakhina/token-calibration-kit, tags `1.0.0` and `1.1.0`, both with releases). `TextFeatures` counts a request by `ScalarClass` (ASCII letters, digits, whitespace, ASCII symbols, CJK, other letters, emoji per grapheme, other) plus message, tool-definition and request framing. `TokenRates` is a linear model with a documented `standardPrior` (not a measured tokenizer). `TokenCalibrator` (actor) keeps one calibration per model: a weighted ridge fit (each bill weighted `1/billed`, every rate pulled toward the prior by a small anchor plus 5% of its own evidence, so a class no bill contained stays exactly at the prior and the 11x11 system is always positive definite; Cholesky solve; negative rates clamped), a split-conformal interval from the last 200 *prequential* errors (each bill scored against the estimate made before it was learned from; 19 needed at 90%, the 0.6x-1.8x prior band until then), `ContextFit` (`fits` / `uncertain` / `overflows(by:worstCaseOverflow:)`), a drift test, and `Codable` snapshots with validation on restore. No dependencies.
+
+Two design corrections found while building, both before publishing:
+- **The first drift test never fired.** It checked each bill against the live interval, and with 60 errors the lower bound is the third-smallest, so three drifted bills stretch the interval over themselves. Drift is now judged against a reference interval built from the errors older than the last 20 bills; 8 or more of 20 outside (binomial tail < 0.001 at 90%) restarts that model from the prior. The window must hold both, so `windowTooSmall` now requires `minimumBills + driftWindow`.
+- **`ContextFit.overflows` lost its worst case**, so `tokensToTrim` returned the least overflow. It now carries both.
+
+One correction found after publishing, by the shared demo: **1.0.0 gave never-billed classes a calibrated interval.** Scenario 91's host had been billed only for English and short Japanese questions; a timestamp-heavy log (digits never billed, so still at the prior's 0.5 a digit against the host's 1) was called 2697-3543 tokens, calibrated, "fits, 41 to spare", and billed 3896, over the window. **1.1.0** splits the estimate: the familiar part keeps the calibrated interval, the part from classes no bill has contained gets the prior band, and `TokenEstimate.unfamiliarTokens` reports it. Additive API, so a minor version.
+
+Measured (demo, **simulated** upstream tokenizer that is deliberately not the prior; 1.1.0 figures):
+- Bills 61-160, each estimated before its bill: median absolute error **33.0% for chars/4, 1.0% calibrated** (English 11.6% vs 1.0%, code 31.2% vs 0.7%, Japanese 71.8% vs 1.0%, emoji-heavy 40.3% vs 1.9%); **91/100 inside the 90% interval** (89/100 with 1.0.0).
+- First Japanese bill (520 tokens): chars/4 175 (-66.3%); calibrator 539 (+3.7%), interval 404-817 because the CJK part was unfamiliar (1.0.0: 530-579, a miss).
+- 8,192-token window, 1,024 reserved: chars/4 got two of four near-limit requests wrong (a Japanese one at 1,719 "fits", billed 7,530); the calibrator called two overflows and one fit correctly and the fourth (fit with 35 to spare) "may overflow by up to 177".
+- Budget holds over 100 mixed requests: chars/4 held 20,646 against 33,591 billed, short on 90; the calibrated upper bound held 35,343 (+5.2%), short on 3 by 8 tokens.
+- Tokenizer upgrade at bill 161: alarm at bill 165 (8 of 20, p = 4.16e-04); last 40 bills median error 0.8%, 39/40 inside.
+
+Gates (Swift 6.2.4), all tool-verified on 1.1.0:
+- `swift build` 0 warnings, 0 errors.
+- `swift test --enable-code-coverage`: **31 tests**, 0 failures (30 on 1.0.0).
+- `llvm-cov report`: **100.00%** regions (224), functions (74) and lines (530) on all 9 library files with code (`CalibrationError.swift` declares an enum only). 1.0.0: 100.00% of 218 / 70 / 502.
+- `swiftlint lint --strict` 0.63.2: 0 violations, 18 files, no suppressions (12 long demo lines wrapped and one 3-tuple replaced on the way).
+- README snippets compiled and run against the package in a scratch project (both versions). Library sources ASCII; the demo and test fixtures carry Japanese and emoji on purpose.
+- Demo (`TokenCalibrationDemo`): run for real, 57 lines, captured in `Screenshots/demo-output.txt` and `demo.svg`.
+- Mutation checks on scratch copies of 1.1.0: 4 of 4 mutants fail at least one test (dropping the ridge anchor: 35 failures; judging drift against the live interval: 1; `<` for `<=` at the window edge: 1; treating every class as unfamiliar: 3).
+
+Fresh-clone verification (STEP 6b), for each tag: `diff -rq` identical, the tag on HEAD, 0 build diagnostics, 30/30 then 31/31, 100.00% regions/functions/lines, lint 0, demo 57 of 57 lines identical.
+
+**7a — llm-ecosystem-demo, scenario 91** (`1c0c4a2`). One route, `calibration-host` ($3/$15 per M), with a simulated tokenizer the calibrator never sees. `TokenCalibrator` learns it from 30 earlier bills (English and short Japanese questions; 11/11 calibrated checks inside). A customer pastes a 120-line Japanese upload log into a 4,096-token window with 512 kept for the answer: chars/4 says **1673, fits**; the host would bill **6667**; the calibrator says 4209-6749, overflowing by 625 to 3165. The oldest lines are trimmed until the upper bound fits: **63 lines, 2230-3563, 21 to spare**, 626 of it digits that no earlier bill contained, bounded by the prior band. `QuotaGovernor` holds the upper bound, the turn goes through `ProviderRouter`, the host bills **3511 in / 84 out** (inside the window and the interval; the point, 2625, was still 33.8% low on the digits), `TokenMeter` meters **$0.011793**, and the bill goes back to the calibrator. With 1.0.0 the same scenario trimmed to 70 lines, called them 2697-3543 "fits", and was billed 3896, over the window: that is how 1.1.0 came about, and `Package.swift` pins `from: "1.1.0"`. Running total **$0.2821472 across ninety-one scenarios**, up from $0.2703542. Gates: build 0 diagnostics, `swiftlint --strict` 0 (96 files), `token-calibration-kit` the only new pin. Against the 10-19 capture, the 1,624 earlier lines are unchanged except the two totals; scenario 91 adds five lines and a meter row. README (intro count, table row, sample-output total, build/run counts, narrative item 91) and About text updated.
+Fresh clone: source identical, 0 build diagnostics, lint 0 (96 files), **1630 of 1630 output lines identical** (the TraceKit span measured the same on both).
+
+**7b — ai-chat-app** (`ca04d00`): **`tokenCalibration` does real work.**
+- **In the send path, in `TurnExecutor`**, right after the idempotency key and before the workload profile and the budget hold (`TurnExecutor+TokenCalibration.swift`). `LiveTokenCalibration` counts `request(from: turn)`, the request as it is actually sent (the messages after `ToolResultBoundary.instructing`, plus `wireTools()`), and `ContextFit` compares it with the window the compactor used (now carried on `PreparedTurn.contextWindowTokens`) less `settings.maxOutputTokens`.
+- **Learned from every turn's first billed call** (`usage.firstRecord(after:)`), the one call made with exactly that request; a tool turn's later hops carry tool results and are not used.
+- **Keyed by the model on the wire** (`OpenRouterConfiguration.model`, set in `Composition`), because `LLMRequest` still has no model field and rates filed under `turn.modelID` would describe a model that never billed them.
+- **Outcomes**: `.ran` (estimate, interval, basis, "fits, N to spare" or "may overflow by up to N"; with 1.1.0 also how many tokens came from never-billed text); `.refused` when even the lower bound overflows: "Too long for this model", the interval, window and overflow, "Nothing was sent or charged", recovery Start a new conversation; `.failed` without blocking when an estimate cannot be made; `.skipped` in harnesses with no calibrator.
+- The calibration lives for the app session. Persisting it, holding budget and recovering usage at the calibrated bound, compacting by calibrated tokens, and per-model windows from the catalog went into Remaining work.
+- SwiftLint: 7 long lines in the new files over three passes, all wrapped; no limit raised.
+
+Gates (DerivedData `/tmp/aichatapp-coverage-dd`; its checkouts had survived two idle days this time; work done in a `/tmp` clone):
+- `xcodegen generate` clean. Build: 0 compiler warnings.
+- Run 1 (TokenCalibrationKit 1.0.0): **1295 tests in 199 suites, all passing; 24/24 XCUITests; `** TEST SUCCEEDED **`**. Run 2, the gate run (1.1.0, `from: 1.1.0` in `project.yml`, plus the unfamiliar-text detail and its assertions): **1295 in 199, all passing; 24/24; `** TEST SUCCEEDED **`**. 8 new tests in `TokenCalibrationStageTests`; the stage-table test now expects 93.
+- `swiftlint --strict` 0 violations, 147 files.
+- Coverage (run 2) **97.46% (16140/16561)**, up from 97.45%. `LiveTokenCalibration.swift` 100.00% (52/52), `TurnExecutor+TokenCalibration.swift` 100.00% (20/20), `PreparedTurn.swift` 100.00% (37/37); `TurnExecutor.swift` 98.97% (193/195) and `PreModelPipeline.swift` 98.54% (338/343), missed lines older than this change.
+- Secrets scan before push: 0 keys; there is no `Secrets.xcconfig` in the `/tmp` clone.
+- Both full runs took about 13 minutes of tests (unit phase 456 s, UI phase 283-286 s) at load averages of 20 to 65.
+
+Fresh-clone verification: `diff -rq` identical (excluding `.git`, the generated `.xcodeproj`, `DerivedData`, `Secrets.xcconfig` and `.DS_Store`); there is no `Secrets.xcconfig` in the clone, and it builds from the committed placeholder; `xcodegen generate` clean; `swiftlint --strict` 0 (147 files). The full `xcodebuild test` against the clone (own DerivedData `/tmp/aichatapp-verify-dd-20261022`, package checkouts shared via `-clonedSourcePackagesDirPath`) was still running when this entry was first written; its result is recorded at the end of this entry.
+
+README: status table, package count and count history (to 93; 89 doing real work), the header's stale "77-package" corrected to 93, a "Will it fit" section, two "What was learned" entries (a calibrated interval only covers text like the text that was billed; count the request the way it is sent and learn from the call that sent it), four Remaining-work items, the Layout block. About text updated.
+
+**Maintenance (light pass).** Took the two named next on 10-19: `hedged-request-kit` (09-30) and `model-cascade-kit` (10-01). Fresh clones:
+- `hedged-request-kit`: 0 build diagnostics, **28 tests** (XCTest; the Swift Testing line read 0, as expected), **100.00%** regions (88), functions (49) and lines (234), lint 0 under `--strict` (8 files), tag `1.0.0`. README claims 28 tests and 100.00%: both match. About text accurate. No fixes needed.
+- `model-cascade-kit`: 0 build diagnostics, **27 tests**, **100.00%** regions (131), functions (56) and lines (235), lint 0 (6 files), tag `1.0.0`. README claims 27 tests and 100.00% on 235 lines: all match. About text accurate. No fixes needed.
+
+Next in line, ranked the same way (never named in a maintenance paragraph, oldest first): `stream-release-kit` (10-02) and `outcome-monitor-kit` (10-05). The gateway coverage TODO stays closed (see 09-30). `fleet-rollout-kit`'s 97.93% lines and 3 lint violations (10-16) are still open.
+
+**Working copies.** Everything was built in `/tmp` and pushed from there. `TokenCalibrationKit` was copied into `Portfolio Projects/TokenCalibrationKit` with its `.git` after each tag (`diff -rq` identical). The iCloud mirrors of both consumers were fast-forwarded in the background. The session itself was the bottleneck: GateGuard's state expires after 30 idle minutes, turns here were hours apart, so the gate re-armed on almost every turn and long heredocs had to be split (saved to memory).
+
+**Next candidates:**
+1. New, from today's 7b: persist the token calibration across launches; hold budget and recover usage at the calibrated bound; let the compactor trim by calibrated tokens (or by `ContextFit.tokensToTrim`) so a refusal becomes a shorter request; per-model windows from the catalog.
+2. `TokenCalibrationKit`: a class seen in one bill is "familiar" however little of it there was; a per-class evidence threshold (or the ridge's posterior variance) would bound weakly-seen classes too. Images and audio are not counted at all.
+3. Carried from 10-19: persist open usage-recovery charges; show recovered charges in Diagnostics; pin the upstream to narrow recovery bounds; `UsageRecoveryKit` 1.0.1 overflow guard.
+4. Carried: send the chosen model (blocks `hedgedRequest` and `modelCascade`, and would let `tokenCalibration` key by the router's choice); stream the continuation into the live bubble; `fleet-rollout-kit` coverage and lint.
+
+**Repos:**
+- https://github.com/rajatslakhina/token-calibration-kit (today's package, `1.0.0` and `1.1.0`)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 91)
+- https://github.com/rajatslakhina/ai-chat-app (`tokenCalibration`, 1295 tests, 97.46%)
+- https://github.com/rajatslakhina/hedged-request-kit, https://github.com/rajatslakhina/model-cascade-kit (maintenance)
