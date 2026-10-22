@@ -4458,3 +4458,21 @@ The iCloud mirror `Portfolio Projects/FleetRolloutKit` was fast-forwarded from `
 
 **Repos:**
 - https://github.com/rajatslakhina/fleet-rollout-kit (`1.1.1`)
+
+## 2026-10-22 — maintenance pass and the demo on usage-recovery-kit 1.0.1 (follow-up, no new package)
+
+*Manual follow-up, 15:20 to 15:45 IST. Kept to `/tmp` SwiftPM work: another session was building the HomeDepot app on the same iPhone 17 Pro simulator ai-chat-app tests on, and today's scheduled run starts around 16:20, so ai-chat-app was not touched.*
+
+**Maintenance, the two named next on 10-21.** Fresh clones:
+- `stream-release-kit`: 0 build diagnostics, **23 tests** (XCTest; the Swift Testing line read 0, as expected), **100.00%** regions (99), functions (48) and lines (271), lint 0 under `--strict` (7 files), tag `1.0.0`. README says 23 tests and 100.00%: both match. About text accurate. No fixes needed.
+- `outcome-monitor-kit`: 0 build diagnostics, **26 tests**, **100.00%** regions (227), functions (96) and lines (429), lint 0 (8 files), tag `1.0.0`. README says 26 tests and 100.00% on 429 lines: both match. About text accurate. No fixes needed.
+
+Next in line, ranked the same way (never named in a maintenance paragraph, oldest first): `verified-call-kit` (10-06) and `progress-gate-kit` (10-07).
+
+**llm-ecosystem-demo on 1.0.1** (`3c20b9f`). `swift package update usage-recovery-kit` changed only that pin (1.0.0 `9f924e2` to 1.0.1 `c65144b`). Built with 0 diagnostics before and after, and the demo printed **1630 of 1630 lines identical** before and after the bump (the TraceKit span measured the same both times). Scenario 90's values are nowhere near the new limits, so nothing else was expected to move. The commit is `Package.resolved` only; README unchanged. Fresh clone: files identical, `swift package resolve` leaves the 1.0.1 pin as committed. A full rebuild of the clone was skipped (the working copy built and ran these exact files), to keep load off the user's HomeDepot build. The iCloud mirror was fast-forwarded to `3c20b9f`.
+
+**Still open.** ai-chat-app resolves `usage-recovery-kit` 1.0.0; it never passes values near the limits, and moving it costs a ~90-minute xcodebuild cycle, so it is left for a run that is updating the app anyway. The carried app items from 10-19 (persist open usage-recovery charges, show them in Diagnostics, pin the upstream) are unchanged.
+
+**Repos:**
+- https://github.com/rajatslakhina/stream-release-kit, https://github.com/rajatslakhina/outcome-monitor-kit (maintenance)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (`usage-recovery-kit` 1.0.1)
