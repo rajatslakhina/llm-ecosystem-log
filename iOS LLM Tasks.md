@@ -4430,3 +4430,31 @@ Next in line, ranked the same way (never named in a maintenance paragraph, oldes
 - https://github.com/rajatslakhina/usage-recovery-kit (`1.0.1`)
 
 **2026-10-21 entry, 7b fresh-clone result** (recorded 2026-10-22, 14:08 IST, when that run finished; it lands after the 10-22 entry above because that entry was pushed while the verification was running): the full `xcodebuild test` against the clone of `ca04d00` gave **1295 tests in 199 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`, 0 compiler warnings**, on TokenCalibrationKit 1.1.0, built from the committed `Secrets.example.xcconfig` placeholder. That is the third full run of this change, all green. Coverage was not re-measured on the clone.
+
+## 2026-10-22 — fleet-rollout-kit back to 100% coverage and a clean strict lint (maintenance follow-up)
+
+*Maintenance only, from a live session continuing the 10-16 run's one open item. Not a daily package run: no new package was built. The 10-22 entry above (UsageRecoveryKit 1.0.1) is a separate follow-up from another session.*
+
+**Why.** The 10-16 light pass found `fleet-rollout-kit` below this series' bar: 97.93% of lines covered (21 missed in 5 files, 93.65% of regions) and 3 `swiftlint --strict` violations (a complexity-15 `DocumentValidator.defects(in:)` that was also 55 lines long, and a 52-line `PropagationSimulator.timeToKill`). The 10-19 and 10-21 entries carried it unchanged. The tags explain where it came from: `1.0.1` (`ed6aeed`) was the fully covered, lint-clean release; `v1.1.0` (`02b2510`) adds the concurrent process's 09-23 "review fixes" and "drop vacuous tests" commits, and the dropped tests were the ones asserting the operator-facing messages.
+
+**What changed** (`129745a`, tag `1.1.1`, release published; no public API change):
+- `DocumentValidator.defects(in:)` is split into `documentDefects`, `flagDefects` and `ruleDefects`, appending in the same order, so every defect list is unchanged.
+- `PropagationSimulator.timeToKill` draws each device through `firstArrival(profile:channels:window:using:)`, with the same random-draw order.
+- `Percentile.value` drops its own empty-input guard: `SafeMath.clampedIndex` already returns no index for an empty array, so the second guard was unreachable.
+- The two defensive `ConfigStore` guards no public call can reach get testable seams instead of staying untested: `releaseInFlight(generation:)` is internal, and the empty task-group race is `ConfigStore.firstFinished(_:)`. The 09-23 log had called the second "provably unreachable" and left it at 99.90%.
+- 14 tests (`MessagesAndGuardsTests.swift`, as extensions of the domain test classes): every `DocumentDefect` and `RefreshOutcome` message, exactly as a dashboard shows them; the stability-check failure text; `restore()` with nothing saved; the in-flight slot's identity check, asserted while a slow request holds the slot; the empty-race seam; `SystemClock`; the exposure dedupe key without a document version; `meets(_:)` needing both coverage and deadline; a non-finite exponential mean; an empty percentile; `appBuildAtMost`; `.not` over a match.
+
+**Verification.**
+- `swift test --enable-code-coverage`: **126 tests, 0 failures** (112 before). `llvm-cov report`: **100.00%** of regions (461), functions (156) and lines (1023) on all 11 `FleetRollout` files. `FleetRolloutUI` has no test target and was not measured before either; the README says so.
+- `swiftlint lint --strict` 0 violations (14 files); `swift build -Xswiftc -warnings-as-errors` 0 diagnostics. No non-ASCII added (the 29 non-ASCII lines are pre-existing comment dashes).
+- Behaviour, not just tests: the simulator and percentile were run before and after the change over a grid (5 seeds, 4 fleet sizes, 6 channel sets, 4 windows, plus a percentile grid with empty input). The raw dumps differed only in the order `Dictionary` prints `channelAttribution` (Swift seeds hashing per process) and in one interleaved test-timing line; with the attribution sorted, **500 of 500 lines are identical**. The 112 existing tests also pass unchanged.
+- Mutation check: with the generation guard forced open, the new identity test fails (1 of 26 in `ConfigStoreTests`). Source restored byte for byte (shasum).
+- Fresh clone of tag `1.1.1`: source identical, 0 diagnostics with warnings as errors, 126/126, 100.00% regions/functions/lines, lint 0.
+- Consumers: `llm-ecosystem-demo`'s committed `Package.resolved` actually pins `fleet-rollout-kit` at **1.0.1**, not `v1.1.0` as I had assumed; updated to 1.1.1 in a scratch clone, it builds and its full output is identical (1630 of 1630 lines). The pin was not changed in the repo. ai-chat-app commits no lock file and its DerivedData had resolved 1.1.0; on a fresh package resolution (`-clonedSourcePackagesDirPath`, which resolved fleet 1.1.1) its `FleetRolloutStageTests` and `PipelineTraceTests` pass: 17 tests in 2 suites, `** TEST SUCCEEDED **`. The full app suite was not re-run, since the public API and the diffed behaviour are unchanged.
+
+The iCloud mirror `Portfolio Projects/FleetRolloutKit` was fast-forwarded from `02b2510` to `129745a` (it had also missed the 10-16 README fix).
+
+**Carried list.** Remove `fleet-rollout-kit` coverage and lint from the carried items. Maintenance next-in-line is unchanged from 10-21: `stream-release-kit` (10-02) and `outcome-monitor-kit` (10-05).
+
+**Repos:**
+- https://github.com/rajatslakhina/fleet-rollout-kit (`1.1.1`)
