@@ -4516,3 +4516,23 @@ Fresh-clone verification: `diff -rq` identical to the pushed work tree (excludin
 - https://github.com/rajatslakhina/stance-guard-kit (today's package, `1.0.0`)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 92)
 - https://github.com/rajatslakhina/ai-chat-app (`stanceGuard`, 1302 tests, 97.47%)
+
+## 2026-10-22 — late scheduler fire: maintenance on four repos, no new package
+
+*Scheduled fire at 18:36 IST, after the StanceGuardKit entry above had closed the 10-22 run ("No second package was built today"). This is the scheduler catching up on the 14:53 slot it skipped while five old sessions were still marked running. A second package for the same day would double it, and earlier today the user stopped a session that was about to do exactly that, so this run did maintenance only. Neither consumer was touched.*
+
+**Topics considered.** None. Today's package was already chosen, built and logged.
+
+**Maintenance, next in line after the 15:20 pass** (never named in a maintenance paragraph, oldest first). Fresh clones, Swift 6.2.4, SwiftLint 0.63.2:
+- `verified-call-kit` (`d9bf01e`): 0 build diagnostics, **39 tests**, **100.00%** regions (203), functions (71) and lines (382) on 8 files, `swiftlint --strict` 0 (11 files), tag `1.0.0`. `VerifiedCallDemo` printed 41 lines, byte-identical to `Screenshots/demo-output.txt`. README says 39 tests and 100.00% on 382 lines: both match.
+- `progress-gate-kit` (`367fecf`): 0 diagnostics, **25 tests**, **100.00%** regions (220), functions (91) and lines (397) on 6 files, lint 0 (8 files), tag `1.0.0`. Demo 58 lines, byte-identical. README says 25 tests and 100.00% on 397 lines: both match.
+- `content-boundary-kit` (`0add97c`): 0 diagnostics, **36 tests**, **100.00%** regions (175), functions (75) and lines (364), lint 0 (15 files), tag `1.0.0`. Demo 87 lines, byte-identical. README says 36 tests and 364 lines: both match.
+- `trajectory-consistency-kit` (`20e7e53`): 0 diagnostics, **35 tests**, **100.00%** regions (468), functions (146) and lines (763) on 13 files, lint 0 (19 files), tag `1.0.0`. Demo 73 lines, byte-identical. README says 35 tests and 13 files: both match.
+
+About texts read and accurate. The first two say "Swift 6"; both use tools 5.10 with the `StrictConcurrency` upcoming feature, and their READMEs say so precisely ("Swift 6 toolchain, Swift 5.10 language mode, strict concurrency"), so nothing was changed. The local mirrors of the first two sit at the same commits as GitHub. No fixes, no pushes to any package repo.
+
+Next in line: `hidden-text-kit` (10-12) and `session-mask-kit` (10-13).
+
+**Still open, unchanged:** ai-chat-app resolves `usage-recovery-kit` 1.0.0 (1.0.1 is allowed by `from: 1.0.0`; behaviour is the same for the app's values). Left for a run that updates the app anyway, since moving it costs a full xcodebuild cycle and a Home Depot session was active on the machine. The carried app items from 10-19 are unchanged.
+
+**Repos:** https://github.com/rajatslakhina/verified-call-kit, https://github.com/rajatslakhina/progress-gate-kit, https://github.com/rajatslakhina/content-boundary-kit, https://github.com/rajatslakhina/trajectory-consistency-kit (maintenance, read-only).
