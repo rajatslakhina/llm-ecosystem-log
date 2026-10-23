@@ -4536,3 +4536,51 @@ Next in line: `hidden-text-kit` (10-12) and `session-mask-kit` (10-13).
 **Still open, unchanged:** ai-chat-app resolves `usage-recovery-kit` 1.0.0 (1.0.1 is allowed by `from: 1.0.0`; behaviour is the same for the app's values). Left for a run that updates the app anyway, since moving it costs a full xcodebuild cycle and a Home Depot session was active on the machine. The carried app items from 10-19 are unchanged.
 
 **Repos:** https://github.com/rajatslakhina/verified-call-kit, https://github.com/rajatslakhina/progress-gate-kit, https://github.com/rajatslakhina/content-boundary-kit, https://github.com/rajatslakhina/trajectory-consistency-kit (maintenance, read-only).
+
+## 2026-10-23 — NumberBindingKit shipped; ai-chat-app checks every number in an answer against what the turn's tools and sources returned
+
+*The 10-23 run. The scheduler fired it at 15:29 IST on 10-23; the session stalled for hours between turns (load averages up to 60, the Mac slept once mid-research and a background `git clone` hung for 90 minutes), so most of the build happened in the early hours of 10-24. Filed under 10-23, the day it fired. No other session of this task was running (`list_sessions` showed only finished ones), and no 10-23 entry existed.*
+
+**Topics considered.** The claude-in-chrome cloud hand-off was not opened (the runs through 10-22 found it empty or stuck loading). Searches this run:
+- Agent reliability this autumn: a July 2026 synthesis (*Beyond the Leaderboard*, arXiv 2607.05775) groups failures into tool invocation, planning, long-horizon, multi-agent, safety and measurement; a June 2026 single-system study describes failures whose error signal never reaches a human in actionable form. Both are already covered by `OutcomeMonitorKit`, `ProgressGateKit`, `LoopGuardKit` and the refusal rule in ai-chat-app.
+- Numeric fidelity: *Proof-Carrying Numbers* (Solatorio, arXiv 2509.06902) proposes showing a number as verified only after a mechanical check against structured claims under a declared policy (exact, rounding, aliases, tolerance with qualifiers), done in the renderer and fail-closed. The ecosystem had nothing that does this: `ClaimConsistencyKit`'s `NumericAgreementRule` compares one claim sentence with one passage sentence, never a tool's JSON, never rounding to the answer's own precision, never a number the model computed. **Chosen.** ai-chat-app's calculator and clock tools make it testable for real.
+
+**Package built: `NumberBindingKit`** (https://github.com/rajatslakhina/number-binding-kit, tag `1.0.0`). `FigureReader` reads every figure with the precision it was written to, scale (`k`, `M`, `million`, `bn`, `lakh`, `crore`), percent forms, units with families and factors, times of day and ISO timestamps, qualifiers (`about`, `over`, `no more than`, `~`, `≤`), a role (quantity, year, clock; or exempt: ordinal, list marker, citation, identifier) and the content words around it within its clause. `NumberBinder` binds each answer figure to evidence figures under a `BindingPolicy` (`.strict`, `.standard`, `.lenient`): `exact`, `rescaled`, `converted`, `rounded`, `approximate`, `withinBound`, `derived(sum|difference|product|ratio|percentChange|percentOf)`, or else `contradicted` (same kind, shared label word, nothing within lenient reach), `echoed` (matches only an earlier answer), `unbound`, `exempt`. `NumberBindingReport` gives a verdict, a user note, a trace summary and segments; `BindingSession` (actor) remembers a conversation's answers so a repeated number cannot vouch for itself. Gates: 0 build diagnostics, **34 tests** green on 5 runs, **100.00%** lines (1029), regions (670) and functions (253) on all 15 library files, `swiftlint --strict` 0 (19 files), three rules mutation-checked (earlier answers as evidence: 9 assertions in 3 tests; no lenient yardstick: `testContradictionRules`; two-digit derived rounding: `testDerivedClosenessIsStricter`). The demo (8 scenarios, 77 lines) found four gaps and a test a fifth, each fixed and pinned: a percentage "contradicted" by `1,000`; `.strict` calling true-but-loose figures contradictions; label windows crossing neighbouring figures; a clock losing its label after the fix; the noun after one figure labelling the next. Fresh clone of `1.0.0`: identical to the working copy, 0 diagnostics, 34/34, 100.00%, lint 0, demo byte-identical.
+
+**7a — llm-ecosystem-demo, scenario 93** (`b9b667e`). `ToolRegistryKit` dispatches an `analytics` tool; one `ProviderGatewayKit` session answers with the conversion rate at 6.7% where the tool said 0.057. `NumberBindingKit`: 46,404 and 2,645 exact, 15% derived (percent change from the user's 2,300 and the tool's 2,645), 6.7% **contradicted**. The note goes back to the model; the corrected 5.7% binds as **rescaled**. On a follow-up with no tool call, `BindingSession` reports 15% and 5.7% as **echoed** and the 3,040 projection as **unbound**. Metered at **$0.000822**; running total **$0.2852372 across ninety-three scenarios** (exactly $0.2844152 + $0.000822). README (intro, package table, totals, build lines, scenario narrative) and About updated. Fresh clone: identical, full build 0 warnings, `swiftlint --strict` 0 (98 files), 1659 lines, byte-identical to the local run. iCloud mirror fast-forwarded to `b9b667e`.
+
+**7b — ai-chat-app** (`6bb79f6`): **`numberBinding` does real work.**
+- Tool results did not reach the post-model stages before this. `ProviderEffectExecutor` now keeps each successful call's result (`ToolOutput`, sorted JSON), `CallResult.succeeded` carries it, `TurnCompletion.toolOutputs` holds it, and `ChatViewModel` passes it to `review`.
+- The stage runs after `stanceGuard` on turns with a tool result or a retrieved source, with every user message as evidence and earlier answers as echo-only. A note under the bubble (kept out of the text, the cache and the history) names contradicted, unbound and echoed figures. `.ran` / `.noOp` / `.skipped` (withheld answer; no evidence). No refusal: an unbound figure may be right.
+- Making room first: `ProviderEffectExecutor.swift` was at 498/500 lines and `PostModelPipeline`'s actor body at 250/250 under `--strict`; `agentLoopOutcome` moved to `+Records.swift` and `judge`/`recordSegmentation` to a same-file extension.
+- `/tmp/aichatapp-coverage-dd` was purged again (97 dirs, 96 without `Package.swift`, exit 74). The intact 10-22 DerivedData was moved into place; its first build printed 6,793 "Stale file" notices for the old path and 0 compiler warnings.
+- The first gate measured `PostModelPipeline+NumberBinding.swift` at 54/56: the two `??` fallbacks in `ToolOutput.init`. Folded into one `guard`, which the failed-call test reaches; second gate below.
+
+Gates (documented command, `name=iPhone 17 Pro`, DerivedData `/tmp/aichatapp-coverage-dd`):
+- `xcodegen generate` clean; `swiftlint --strict` 0 violations, 149 files.
+- First gate: 1310 tests in 202 suites, 24/24 UI tests, `** TEST SUCCEEDED **`, 0 compiler warnings; coverage 97.47% (16274/16696).
+- Final gate: **1310 tests in 202 suites, all passing, 24/24 XCUITests, `** TEST SUCCEEDED **`**, 0 compiler warnings.
+- Coverage **97.48% (16274/16694)**, previous run 97.47% (16197/16617). `PostModelPipeline+NumberBinding.swift` 100.00% (54/54), `PostModelPipeline.swift` 100.00% (217/217), `ChatBubble.swift` 100.00% (17/17), `ChatView.swift` 78.83% (622/789), up from 78.67%. The final gate printed no "Stale file" notices; the 2 `appintentsmetadataprocessor` notices are the usual ones.
+- Secrets scan before push: 0 keys, `Secrets.xcconfig` not staged.
+- `usage-recovery-kit` now resolves **1.0.1** (pins are gitignored, so the gate resolves the newest allowed tag), which closes the open item from the 10-22 entries.
+
+README: status table, package count (95; 91 doing real work) and its history, a "Numbers bound to evidence" section, a "What was learned" entry (the two lint limits and the DerivedData swap), two Remaining-work bullets, the Layout block.
+
+Fresh-clone verification: `diff -rq` identical to the pushed work tree (excluding `.git`, the generated `.xcodeproj`, `DerivedData`, `Secrets.xcconfig` and `.DS_Store`). No `Secrets.xcconfig` in the clone; it builds from the committed placeholder. `xcodegen generate` clean, `swiftlint --strict` 0 (149 files), and the full `xcodebuild test` against the clone on its own fresh DerivedData (`/tmp/aichatapp-verify-dd-20261024`): **1310/1310 in 202 suites, 24/24 UI tests, `** TEST SUCCEEDED **`, 0 compiler warnings**. Coverage was not re-measured on the clone. The local `AIChatApp` mirror was fast-forwarded to `6bb79f6`.
+
+**Maintenance** (next in line: `hidden-text-kit`, `session-mask-kit`). Fresh clones, Swift 6.2.4, SwiftLint 0.63.2:
+- `hidden-text-kit` (`b8c3ffe`): 0 build diagnostics, **44 tests**, **100.00%** regions (325), functions (129) and lines (565) on 11 files, `swiftlint --strict` 0 (19 files), tag `1.0.0`. Demo 132 lines, byte-identical to `Screenshots/demo-output.txt`. README says 44 tests: matches.
+- `session-mask-kit` (`af1aee5`): 0 diagnostics, **37 tests**, **100.00%** regions (257), functions (147) and lines (574) on 16 files, lint 0 (24 files), tag `1.0.0`. Demo 83 lines, byte-identical. README says 37 tests: matches.
+About texts read and accurate. No fixes, no pushes. Next in line: `link-egress-kit` (10-15) and `degeneration-guard-kit` (10-15).
+
+**Still open:** `foundation-model-provider-gateway`'s coverage TODO stays closed (98.30% on 09-30). The carried app items from 10-19 and 10-22 are unchanged.
+
+**Next candidates:**
+1. New, from today's 7b: mark figures inline from `NumberBindingReport.segments`; keep a conversation's tool results with the message so later turns can bind to them and the note survives a restore.
+2. Carried from 10-22: a re-check button under the stance note; store the stance note with the message.
+3. Carried: persist the token calibration and open usage-recovery charges; send the chosen model (blocks `hedgedRequest` and `modelCascade`).
+
+**Repos:**
+- https://github.com/rajatslakhina/number-binding-kit (today's package, `1.0.0`)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 93)
+- https://github.com/rajatslakhina/ai-chat-app (`numberBinding`, 1310 tests, 97.48%)
