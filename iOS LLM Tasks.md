@@ -4798,3 +4798,14 @@ Both branches fast-forward their remote `main` (`409a59d` and `bde2d4c`). Or add
 - https://github.com/rajatslakhina/package-claim-kit (today's package, `1.0.1`; private until Rajat flips it)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 97 committed locally on top of held 95 and 96)
 - https://github.com/rajatslakhina/ai-chat-app (`packageCheck`, 1345 tests, 97.55%, committed locally on top of held `calendarCheck` and `languageMatch`)
+
+## 2026-10-29 — calendar-claim-kit made public; the 10-27 held pushes landed (follow-up to the 10-27 entry, no new package)
+
+*Rajat approved making `calendar-claim-kit` public in the 10-27 session. Only that repo was flipped; `language-confusion-kit` (10-28) and `package-claim-kit` (10-29) are still private and their stacked branches are still held.*
+
+- `gh repo edit rajatslakhina/calendar-claim-kit --visibility public`: now PUBLIC; an anonymous `ls-remote` (no credential helper) lists `main` and tags `1.0.0`, `1.0.1` (`0afe8c5`).
+- llm-ecosystem-demo: `pending/calendar-claim-kit-scenario-95` pushed to `main` as a fast-forward (`409a59d` → `c6c77bd`). About text set to 95 packages, 95 scenarios, $0.2879317. Fresh clone of `c6c77bd`: full build 0 diagnostics, run 1688 lines, byte-identical to the 10-27 run, total $0.2879317.
+- ai-chat-app: `pending/calendar-check-stage` pushed to `main` as a fast-forward (`bde2d4c` → `0a3650d`, the commit whose clean clone passed the full gate on 10-27: 1329/1329, 24/24 UI, 0 warnings). Secrets scan of the pushed diff: 0 keys, `Secrets.xcconfig` absent. About text set to 97 packages, 1329 + 24 tests, 97.54%.
+- Both iCloud mirrors fast-forwarded to the new `main`. The 10-28 and 10-29 pending branches are stacked on these commits, so they still fast-forward `main` once their packages are public.
+
+**Still held:** `language-confusion-kit` and `package-claim-kit` (private), scenarios 96-97, and the `languageMatch` and `packageCheck` stages.
