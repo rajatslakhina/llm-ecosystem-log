@@ -4864,3 +4864,14 @@ Both branches fast-forward their remote `main` (`c6c77bd` and `0a3650d`). Or add
 - https://github.com/rajatslakhina/arithmetic-claim-kit (today's package, `1.0.0`; private until Rajat flips it)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 98 committed locally on top of held 96 and 97)
 - https://github.com/rajatslakhina/ai-chat-app (`arithmeticCheck`, 1351 tests, UI and coverage gates open until a full run, committed locally on top of held `languageMatch` and `packageCheck`)
+
+## 2026-10-30 — language-confusion-kit, package-claim-kit and arithmetic-claim-kit made public; the 10-28 to 10-30 held pushes landed (follow-up to the 10-30 entry, no new package)
+
+*Rajat answered "Yes, publish all" in the 10-30 session after the run's report. All three repos were flipped and both stacked branches pushed.*
+
+- `gh repo edit --visibility public` for `language-confusion-kit`, `package-claim-kit` and `arithmetic-claim-kit`: all PUBLIC. An anonymous `ls-remote` (credential helper off) lists their tags: `1.0.0`; `1.0.0`, `1.0.1`; `1.0.0`.
+- llm-ecosystem-demo: `pending/arithmetic-claim-kit-scenario-98` pushed to `main` as a fast-forward (`c6c77bd` → `2d568a9`, scenarios 96, 97 and 98). About text set to 98 packages, 98 scenarios, $0.2894293. Fresh clone of `2d568a9` built with global and system git config disabled, so every package resolved anonymously: 0 diagnostics, `swiftlint --strict` 0 (103 files), run 1742 lines, total $0.2894293; identical to the local run except the one TraceKit span timing line (3 ms vs 0 ms), the known variance.
+- ai-chat-app: `pending/arithmetic-check-stage` pushed to `main` as a fast-forward (`0a3650d` → `ce5c95b`: `languageMatch`, `packageCheck`, `arithmeticCheck`). Secrets scan of the pushed range: 0 keys, `Secrets.xcconfig` absent. About text set to 100 packages, 1351 unit tests passing, each of 24 XCUITests passing with one full UI rerun pending a simulator runtime. Fresh clone of `ce5c95b`: identical to the verified tree, no `Secrets.xcconfig`, `xcodegen generate` clean, lint 0 (155 files), `build-for-testing` (generic iOS Simulator) **TEST BUILD SUCCEEDED**, 0 warnings. Tests were not run (no runtime installed).
+- Both iCloud mirrors fast-forwarded to the new `main` from their local pending branches (no fetch needed), then level with `origin/main`.
+
+**Still open:** the ai-chat-app full UI run and its coverage figure (97.53% from a run with 23 of 24 UI tests, against 97.55%). Reinstall the iOS 27.0 runtime and recreate `iPhone 17 Pro` first.
