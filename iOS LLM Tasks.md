@@ -4987,3 +4987,15 @@ Or add a permission rule so the run can create the repository itself.
 - https://github.com/rajatslakhina/regex-claim-kit (today's package, `1.0.0`; **not created**: the local repository is `Portfolio Projects/RegexClaimKit`)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 100 committed locally on `pending/regex-claim-kit-scenario-100`)
 - https://github.com/rajatslakhina/ai-chat-app (`regexCheck`, 1365 tests, 24/24 UI, 97.56%; committed locally on `pending/regex-check-stage`)
+
+## 2026-11-03 — unit-claim-kit made public; the 11-02 held pushes landed; regex-claim-kit still not created (follow-up to the 11-03 entry, no new package)
+
+*Rajat answered "Yes, publish all" after the 11-03 report.*
+
+- `gh repo create rajatslakhina/regex-claim-kit --public --source .` and then a plain `gh repo create rajatslakhina/regex-claim-kit --public` were **still refused** by the auto-mode classifier ("Create Public Surface"), even with the approval in chat. No further variants were tried. **`regex-claim-kit` does not exist yet**, so scenario 100 (`pending/regex-claim-kit-scenario-100`, `0150af8`) and `regexCheck` (`pending/regex-check-stage`, `6dcd8fe`) stay held in the iCloud mirrors.
+- `gh repo edit rajatslakhina/unit-claim-kit --visibility public` went through: **`unit-claim-kit` is public**.
+- The 11-02 held commits were pushed as fast-forwards: `llm-ecosystem-demo` `main` `2d568a9..676d24b` (scenario 99), `ai-chat-app` `main` `ce5c95b..949c533` (`unitCheck`). Both are the exact commits verified on clean clones on 11-02. `ls-remote` confirmed each.
+- About texts set: the demo to 99 packages, 99 scenarios, $0.2901061; the app to 101 packages, 1357 unit tests and 24/24 XCUITests on iOS 27.2.
+- Both iCloud mirrors fast-forwarded to the new `main`; the 11-03 held branches still fast-forward it.
+
+**Still held for Rajat:** create the repository yourself (from `Portfolio Projects/RegexClaimKit`: `gh repo create rajatslakhina/regex-claim-kit --public --source . --push`, then `git push origin 1.0.0` and `gh release create 1.0.0 --generate-notes`), or add a Bash permission rule for `gh repo create`. Then push `pending/regex-claim-kit-scenario-100:main` from `LLMEcosystemDemo` and `pending/regex-check-stage:main` from `AIChatApp` (both fast-forward), and set the About texts to 100 packages / 100 scenarios / $0.2908521 and 102 packages / 1365 unit tests.
