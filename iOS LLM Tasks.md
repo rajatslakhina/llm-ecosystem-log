@@ -5437,3 +5437,114 @@ No fixes, no pushes. Next in line, in series order: `cost-estimator-kit`, `workl
 - **7a:** `llm-ecosystem-demo` requires `dockerignore-claim-kit` `from: "1.0.1"` (`fad2855`, pushed, `319f2a9..fad2855`). Scenario 108 answer 1 is now **wrong** with 3 wrong claims and 1 caution (the per-service file) instead of 4 wrong; the shorter feedback text it sends back changes the metering to **$0.0014654**; running total **$0.3011291 across one hundred and eight scenarios** (exactly $0.2996637 + $0.0014654). Ledger still 4 reviews, 10 claims, 5 flagged. Output 1942 lines; two runs identical; `Package.resolved` changed only the dockerignore pin; lint 0 (113 files). README and About updated. The line count is reconciled: commit `149b4a1` (11-16) prints 1917 lines measured the same way (`swift run -q`, stdout and stderr), and today's 1942 is exactly those plus 24 scenario-108 lines and one pricing row, with only the two total lines changed; the 11-16 entry's "1940 lines" was measured differently. **Fresh-clone check:** `git clone` of `main` (`fad2855`), identical to the work tree; build 0 diagnostics, lint 0 (113 files). The first run differed from the local run only in the hedged-request scenario's timer-driven lines (whether q1 launched the backup hedge; "hedge wins 1, budget denials 0" against "0, 1"; the two hedge rows of the cost table, same total), taken while the app gate was loading the machine; a second run of the same build was byte-identical to the local run. Vault mirror fast-forwarded to `fad2855`.
 - **7b:** `project.yml` requires `DockerignoreClaimKit` `from: 1.0.1`; `otherDomainsStayQuiet` gains the case that found the bug (a `.gitignore` question, "Yes, `*.log` matches `logs/a.log`." gets no Docker note). README: status rows and the "builder and build context are unknown" bullet. Gates (documented command, `iPhone 17 Pro` `BD64BAD5`, `/tmp/aichatapp-coverage-dd`, `DockerignoreClaimKit` resolved at 1.0.1 `911e4b7`): `xcodegen` clean, `swiftlint --strict` 0 (165 files), 0 compiler warnings, **1430 tests in 219 suites, all passing** (the new case extends an existing test), **24/24 UI tests**, `** TEST SUCCEEDED **`, coverage **97.59% (16735/17148)**, unchanged; secrets scan 0 keys. Pushed `4e0c724` (`fdf0c3c..4e0c724`). **Clean-clone check:** `git clone` of `main` (`4e0c724`), identical to the work tree, no `Secrets.xcconfig`; `xcodegen` clean, lint 0 (165 files), the documented `xcodebuild ... test` on `/tmp/aichatapp-verify-1117` (`DockerignoreClaimKit` at 1.0.1): **1430 tests in 219 suites, 24/24 UI tests, `** TEST SUCCEEDED **`**, 0 compiler warnings. Vault `main` ref at `4e0c724`.
 - **Memory:** `claim-checker-cross-domain-probe` updated (probe a question naming the neighbouring file, and advice that is right under an unstated setup); new `docker-classic-builder-oracle`.
+
+## 2026-11-18 — DockerfileClaimKit shipped; ai-chat-app checks what an answer says about a Dockerfile
+
+*The 11-18 run (Wednesday). The scheduler fired this session at 14:53 IST (09:23 UTC, from `list_task_runs`). No other run session was active, and nothing was pending: no package folder or repo was newer than the 11-17 log. Today's other new repos (`static-stability-kit`, `code-mode-runtime-kit`, `apple-ai-meter-article-demo`) belong to other series. This fire came before the 15:30 IST cloud health check, so there was no cloud hand-off to read, and claude-in-chrome was not opened. `gh repo create rajatslakhina/dockerfile-claim-kit --public` went through as a single command, and so did each of `git push -u origin main`, the tag push and `gh release create`. Nothing is held.*
+
+**Topics considered.** Searches this run:
+- Assistant mistakes in Dockerfiles. Only community and vendor posts turned up, no study. The recurring themes were `COPY . .` before installing dependencies, an `ARG` above `FROM` that is empty in the stage, secrets in `ARG`/`ENV`, unpinned bases and running as root.
+- Applied-AI news for November 2026. This was thin (aggregator digests only). The theme was still verification as the bottleneck for agents.
+
+The open candidate from 11-17 was claims about the Dockerfile itself, using the same `docker build` oracle. **Chosen:** Dockerfile claims. DockerignoreClaimKit decides what reaches the build context; nothing in the series checked what the Dockerfile then does with it. These mistakes build cleanly and fail only when the container runs. Docker on this Mac is an exact oracle (classic builder; the cached `swift:6.0` image gives a shell for `RUN` probes). No study of LLM Dockerfile errors was read, so none is cited.
+
+**Package built: `DockerfileClaimKit`** (https://github.com/rajatslakhina/dockerfile-claim-kit, public, commit `3993092`, tag and GitHub Release `1.0.0`). It is a model of how Docker reads a Dockerfile:
+- **Parser.** Comment lines, continuation lines (a comment inside one is dropped), `# escape=`, heredoc bodies skipped.
+- **Word processing.** `$NAME`, `${NAME}`, `${NAME:-w}`, `${NAME:+w}`, `${NAME-w}`, `${NAME+w}`, quotes, escapes; other forms are unknown, not guessed.
+- **Stages.** Global `ARG`s seen only by `FROM` lines until redeclared. `ENV` and `WORKDIR` inherited through `FROM stage`, `ARG` never. A base image is open: its `ENV`, `WORKDIR` and directories are unknown.
+- **`COPY`/`ADD` walk.** A directory copies its contents. Patterns use Go's `filepath.Match` one segment at a time (`**` is `*`), and a pattern matching a directory copies that directory's contents. A file to a path without `/` is renamed unless that path is a directory. `.` and `..` destinations, relative destinations against `WORKDIR`, `--from` by name or index, and the answer's `.dockerignore` through `DockerignoreRules` are all modelled.
+
+`DockerfileModel.placements(of:)` says where a context file lands, with caveats.
+
+Claims read:
+- **placement**: "`src/index.js` ends up at `/app/src/index.js`", or only the image path ("you get `/app/src/src/index.js`"), traced back to a `COPY` source.
+- **line**: `RUN cd` that ends a `RUN` with later steps; a variable out of scope (a global `ARG`, another stage's value); a stage `ARG` in a shell-form `CMD`; `$NAME` in exec form; several sources to a destination without `/`.
+- **statements**: `RUN cd` lasting, `ARG` before `FROM`, values across stages, `ARG` at run time, `WORKDIR` creating, `COPY` of a quoted directory.
+
+Twelve slips (`copiesDirectoryItself`, `globKeepsPath`, `workdirIgnored`, `destinationNotDirectory`, `excludedByDockerignore`, `runCdDoesNotPersist`, `argBeforeFrom`, `stageStartsFresh`, `argIsBuildOnly`, `workdirCreatesDirectory`, `destinationNeedsSlash`, `execFormNoShell`). A wrong placement is re-judged under seven misreadings; a mismatch none explains is **unchecked**, not wrong. Caveats: a file copied to a path without `/` (`insideIfDirectory` / `renamedUnlessDirectory`; a destination named like a file counts as one), the base image's `WORKDIR`, a pattern to a path without `/`, `ENV` only through `FROM`. Several sources to a destination without `/` stops the classic builder; BuildKit's `convert_copy.go` (read from a sparse clone, not run) has no such check, so with the builder unknown it is a caveat. Nothing is read unless the answer or question names or shows a Dockerfile. Sentences about `cp -r`, `docker cp`, `rsync`, volumes, compose, CI `env:` or `.dockerignore` are left alone. `DockerfileLedger` (actor) marks repeats and keeps the last Dockerfile the chat showed. Depends on `dockerignore-claim-kit` 1.0.1.
+
+**Gates.**
+- Build: 0 diagnostics, tests included.
+- Tests: **39 tests in 8 suites** (155 parameterized cases).
+- Coverage: **100.00% lines (1734) and functions (422) on all 22 library files**, regions 99.65% (1145/1149), measured with `--no-parallel`.
+- Lint: `swiftlint --strict` 0 (27 files), config unchanged. The slip wording was split in two and `Walk.copy` gained a `resolve` helper to meet the complexity limit.
+
+**Parity.**
+- `Scripts/parity.py` builds 69 contexts (87 files) with the classic `docker build` (Docker 27.4.0, `FROM scratch`). It traces each file back by its unique content in `docker export` and writes the fixture. 8 more cases on `swift:6.0` record `docker run` output.
+- All 60 placement cases matched on the first test run.
+- Oracle-confirmed and new to this series: `COPY a b .` stops the classic builder (several sources need a trailing `/`, `.` included), `src/**/*.js` is one level, `COPY src/* /app/` flattens a matched directory's contents, `ENV A=1 B=$A` leaves B empty, an `ARG` is not inherited even through `FROM stage`, and exec-form `CMD` prints `$P`.
+
+**Mutation checks**, each killed by exit status: a directory copied as itself (38 failed expectations) and `ARG` inherited through `FROM` (2).
+
+**Probing before tagging.** 24 correct answers stay unflagged, 10 wrong ones are caught with the right slip, and 15 other-domain sentences plus 4 other-tool sentences beside a Dockerfile make no claim. A compose question keeps a sentence that does not name the Dockerfile out, and a later regex turn stays quiet. An advisor review then traced five ordinary correct answers through the code, and all were flagged:
+- an inverted caveat on `COPY nginx.conf .../default.conf` (also visible in demo scenario 1);
+- `ENV PATH=...:$PATH` in two stages reported as out of scope;
+- a `pip install` clause's path paired with an earlier copied file;
+- a negated `ARG` sentence that defaulted to "available";
+- "copies the folder itself" fired on `COPY src /app/src`, plus "the Dockerfile itself" and `tini -- sh -c`.
+
+All seven were fixed before tagging and are kept as tests (ten probes added in all).
+
+**Demo.** 8 scenarios, 105 lines, two runs byte-identical.
+
+**Linux** (`swift:6.0`, Swift 6.0.3, colima): 0 warnings, 39 tests pass, demo output byte-identical (same md5). Swift 6.0 first crashed (signal 11) on a closure inside `@Test(arguments:)`; it was hoisted to a constant.
+
+**STEP 6b.** `git clone --depth 1 --branch 1.0.0`, byte-identical to the /tmp work copy. Build 0 diagnostics, 39 tests, 100.00% lines and functions, lint 0 (27 files), demo identical to the capture. Dependencies resolved from GitHub (`dockerignore-claim-kit` 1.0.1, `gitignore-claim-kit` 1.0.2). The vault folder was made with `vault-git.sh init`, checkpointed six times to `pending/dockerfile-claim-kit`, then filled from GitHub (byte-identical). `vault-git.sh check DockerfileClaimKit`: **OK** (git data at `~/dev/vault-gitdirs/iOS-Tasks__Portfolio-Projects__DockerfileClaimKit.git`).
+
+**7a — llm-ecosystem-demo, scenario 109** (`92003a3`, pushed, `fad2855..92003a3`). One route (`dockerfile-host`, $0.90/$3.60 per million, priced explicitly), scripted replies, `TokenMeterKit`, one `DockerfileLedger`.
+- Answer 1 (a Node Dockerfile): `DockerignoreClaimKit` returns `noClaims`. `DockerfileClaimKit` says **wrong**, with 5 wrong claims (`runCdDoesNotPersist`, `argBeforeFrom`, `execFormNoShell`, `copiesDirectoryItself` twice) and 1 caution (`COPY package.json package-lock.json .`). With `.classic`, all 6 are wrong.
+- The rewrite is **verified**, 2 of 2.
+- The multi-stage follow-up's `ENV NODE_ENV` claim is **wrong** (`stageStartsFresh`). The file copied through `COPY --from` holds. Built `FROM build`, it is **verified**, 2 of 2.
+- Ledger: 4 reviews, 12 claims, 7 flagged, 0 repeated.
+- Metered **$0.0018288**; running total **$0.3029579 across one hundred and nine scenarios** (exactly $0.3011291 + $0.0018288).
+- Output 1969 lines (1942 + 26 scenario lines + 1 pricing row), two runs byte-identical. Build 0 diagnostics, lint 0 (114 files). `Package.resolved` gained only `dockerfile-claim-kit` at `1.0.0`.
+- README: package count, table row, scenario 109 section, total, build/run counts. About updated.
+- **Fresh-clone check:** `git clone` of `main`, identical to the work tree. Clean build 0 diagnostics, run output byte-identical, lint 0. Vault mirror fast-forwarded to `92003a3`.
+
+**7b — ai-chat-app** (`530b6ca`, pushed, `4e0c724..530b6ca`): **`dockerfileCheck` does real work.**
+- **Where it runs.** Post-model, after `dockerignoreCheck`, on the text the user will see. It is a static stage in `PostModelPipeline+DockerfileCheck.swift` (no network, no configuration).
+- **History.** Earlier answers are replayed through one `DockerfileLedger` per review, each with its question. The ledger keeps the last Dockerfile the chat showed, so a repeat in a later turn is judged against it and says so.
+- **No refusal.** A claim that does not hold gets a note under the bubble ("Dockerfile check: ..."), kept out of the text, the cache and the history. Outcomes: `.ran` / `.noOp` ("no claims about a Dockerfile", "1 claim checked, 1 hold") / `.skipped` (a withheld answer).
+- **One mistake, one note.** Two findings go to the trace only (`.ran`, "not shown under the answer: ..."). One is a file the `.dockerignore` keeps out: `dockerignoreCheck` already notes it, and a test asserts the bubble carries that note and no Dockerfile note. The other is a line only the classic builder stops on (several sources to `.`), since BuildKit was not checked. Both decisions followed the advisor review.
+- **Stage table.** `PipelineStage.dockerfileCheck` maps to `DockerfileClaimKit`, title "Dockerfiles"; the stage-table test is at 111 packages. One entry in `ChatBubble.reviewNotes`, nothing in `ChatView`.
+
+Gates (documented command, `name=iPhone 17 Pro` on iOS 27.2 (`BD64BAD5`), DerivedData `/tmp/aichatapp-coverage-dd`, intact after one idle day: 114 checkouts, all manifests present):
+- `xcodegen generate` clean. `swiftlint --strict` 0 violations, 166 files. 0 compiler warnings (the three `appintentsmetadataprocessor` notices only).
+- **1439 tests in 220 suites, all passing.** 9 new: 8 `DockerfileCheckStageTests`, including the seven review probes kept quiet, plus 1 render test.
+- **24/24 UI tests**, `** TEST SUCCEEDED **` on the first full run.
+- Coverage **97.60% (16784/17197)**, a full run, against 97.59% (16735/17148) on 11-17: **the gate is met**. `PostModelPipeline+DockerfileCheck.swift` 44/44, `PostModelPipeline.swift` 234/234, `PipelineStage+Catalog.swift` 237/237, `ChatBubble.swift` 53/53 (all 100.00%). `ChatView.swift` 78.50% (588/749), unchanged.
+- Secrets scan before commit: 0 keys in the staged diff. No `Secrets.xcconfig` in the /tmp clone (it built from the placeholder).
+
+README:
+- Status rows, package count (111; 107 doing real work), a "Dockerfiles" section, the package-count history line (111 on 2026-11-18), the Layout count.
+- A new "What was learned the hard way" entry: two stages can catch the same mistake, so show it once.
+- About updated to 111 packages and 1439 unit tests.
+
+**Clean-clone check:** `git clone` of `main` from GitHub (`530b6ca`) into `/tmp/llm1118/app-verify`, identical to the work tree (excluding `.git` and the generated project), no `Secrets.xcconfig`; `xcodegen generate` clean, `swiftlint --strict` 0 (166 files), and the documented `xcodebuild ... test` on a new DerivedData (`/tmp/aichatapp-verify-1118`, seeded with the package checkouts; `DockerfileClaimKit` resolved from its GitHub URL at `1.0.0`, `3993092`): **1439 tests in 220 suites passed, 24/24 UI tests, `** TEST SUCCEEDED **`** first time, 0 compiler warnings. Vault mirror: `main` ref fetched to `530b6ca` (working tree stays on another session's `fix/ui-polish-picker-diagnostics-settings`).
+
+**Maintenance** (next in line from 11-17: `cost-estimator-kit`, `workload-profiler-kit`). Fresh clones, Swift 6.4.2:
+- `cost-estimator-kit` (`826b1a3`, public): 0 diagnostics, **42 tests** (XCTest), **100.00%** lines (465), functions (71) and regions, `swiftlint --strict` 0 (21 files), tag present. README (42 tests, 100.00% 465/465) and About: match.
+- `workload-profiler-kit` (`30e3164`, public): 0 diagnostics, **59 tests**, **100.00%** lines (464), functions (77) and regions, lint 0 (11 files), tag present. README badges (59 passing, 100.00%) and About: match.
+
+No fixes, no pushes. Next in line, in series order: `claim-consistency-kit`, `source-conflict-kit`.
+
+**Harness notes.** GateGuard asked for facts before the first Bash command and before one recursive delete (avoided by using a new scratch path). Files were written through shell heredocs.
+
+**Still open:** for `DockerfileClaimKit`:
+- BuildKit was not run (no buildx), so whether it copies or stops on several sources without `/` is unknown.
+- Files a `RUN` creates or moves are not followed.
+- `ADD` archives, `COPY --parents`/`--exclude` and `--from` an outside image are not modelled.
+- A value set only by `--build-arg` is unknown.
+- Plain-prose paths are not read.
+- `CMD`/`ENTRYPOINT` interplay, `EXPOSE` and `USER` claims are not read.
+
+Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL semantics for `SQLClaimKit`; no GitHub Release object for `yaml-claim-kit` 1.0.0 or `sql-claim-kit` 1.1.1.
+
+**Next candidates:**
+1. New, from today's package: `CMD`/`ENTRYPOINT` combination claims (what `docker run image args` executes) and `EXPOSE`/`-p` claims, with the same `docker run` oracle.
+2. Carried: `git check-ignore -v` transcripts; SQL query equivalence; JSON Schema claims once an oracle is installed.
+
+**Repos:**
+- https://github.com/rajatslakhina/dockerfile-claim-kit (today's package, `1.0.0`, public; local `Portfolio Projects/DockerfileClaimKit`, `vault-git.sh check` OK)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 109, `92003a3`)
+- https://github.com/rajatslakhina/ai-chat-app (`dockerfileCheck`, 1439 tests, 24/24 UI, 97.60%; `530b6ca`)
