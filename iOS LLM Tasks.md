@@ -5550,3 +5550,121 @@ Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL 
 - https://github.com/rajatslakhina/ai-chat-app (`dockerfileCheck`, 1439 tests, 24/24 UI, 97.60%; `530b6ca`)
 
 *Correction, same day (2026-11-18, after the final review): four numbers in the entry above were off. Seven parity builds stop, all foreseen, not four. The 69 contexts hold 100 files; 87 of them are in the 62 contexts that built. The mutants, re-run on the 1.0.0 tree, fail 40 and 1 expectations, not 38 and 2 (both still killed). The vault folder was checkpointed eight times, not six. README-only commit `f8921cb` on `dockerfile-claim-kit` corrects the package README and `tests.svg`; tag `1.0.0` was not moved. Still open, from a final probe: a variable the base image sets itself (`ARG NODE_VERSION=20` / `FROM node:${NODE_VERSION}` / `RUN echo $NODE_VERSION`) is reported as `argBeforeFrom` with the fix `ARG NODE_VERSION`, but the official image's `ENV NODE_VERSION` wins, so the fix changes nothing. This is listed under the package's Limits, and is a candidate for 1.0.1 (skip names the base image is known to set). The llm-ecosystem-demo README's scenario 109 also says "87 files"; that is to be fixed next run.*
+
+## 2026-11-19 — EntrypointClaimKit shipped; ai-chat-app checks what an answer says a container runs
+
+*The 11-19 run (Thursday). The scheduler fired this session at 14:53 IST (09:23 UTC, from `list_task_runs`). No other run session was active, and nothing was pending: no package folder or repo was newer than the 11-18 log. The one other new repo today, `linked-billing-kit` (08:54 UTC), belongs to another series. This fire came before the 15:30 IST cloud health check, so there was no cloud hand-off to read, and claude-in-chrome was not opened. `gh repo create rajatslakhina/entrypoint-claim-kit --public` went through as a single command, and so did each push, tag push and `gh release create`. Nothing is held.*
+
+**Topics considered.** Searches this run:
+- Assistant mistakes with `CMD` and `ENTRYPOINT`. Only tutorials and vendor posts from 2025–2026 turned up, no study. The recurring themes were shell form and PID 1, an exec-form `ENTRYPOINT` with a shell-form `CMD`, a shell-form `ENTRYPOINT` that ignores `CMD`, and wrapper scripts without `exec`.
+- AI agents and Dockerfiles. The DockSmith paper (arXiv 2602.00592) repairs Dockerfiles from execution feedback; vendor posts describe builds that pass and containers that fail at runtime.
+
+The first open candidate from 11-18 was `CMD`/`ENTRYPOINT` combination claims, using the `docker run` oracle. **Chosen:** that. DockerfileClaimKit checks where files land and what each build step sees; nothing in the series checked what the image runs. These mistakes build cleanly and fail when the container starts. No study of LLM `CMD`/`ENTRYPOINT` errors was read, so none is cited.
+
+**Package built: `EntrypointClaimKit`** (https://github.com/rajatslakhina/entrypoint-claim-kit, public; tag and GitHub Release `1.0.0` at `5c9cbf9`, then `1.0.1` at `ec2ec59`). It is a model of how Docker composes a container's process:
+- **Parser.** Read from `moby/buildkit`'s `parseMaybeJSON`; the classic builder imports the same parser. Text starting with `[` that is a JSON array of strings is the exec form; other text is the shell form. A JSON array holding a non-string stops the build, and so does shell-form text starting with `--` (read as an instruction flag). Foundation's `JSONSerialization` accepts a trailing comma and Go does not, so the kit has its own strict JSON array reader.
+- **Builder.** Read from `dispatchCmd`/`dispatchEntrypoint` in both builders. A shell-form line is stored as `SHELL` plus its text. A later line wins, and `FROM <stage>` inherits. `ENTRYPOINT` empties an inherited `CMD` unless the stage set `CMD` before it. The one difference found: the classic builder does not count `CMD []` as set, while BuildKit does, and both run nothing extra.
+- **Daemon.** `--entrypoint` is one word, never split, and drops `CMD`. Arguments after the image replace `CMD`. `--entrypoint ""` with no arguments is refused.
+
+`ImageCommands.launch(DockerRun)` gives the words the daemon executes. A base image's `ENTRYPOINT` is unknown (`.fromBase`).
+
+Claims read:
+- **runs**: "`docker run api --debug` runs `...`", "the container starts `...`", and "This runs `...`" after a `docker run` in a code block. The image must be one the chat built (`docker build -t`); a base image, `docker exec` and compose are skipped.
+- **statements**: 14, read only from sentences naming `CMD`/`ENTRYPOINT`, with negated, conditional and other-tool sentences skipped.
+- **lines**: a shell `CMD` under an exec `ENTRYPOINT`; a broken exec form; a non-string array or leading `--` (the build stops); a shell `ENTRYPOINT` with a `CMD`; several `CMD`/`ENTRYPOINT` lines; an inherited `CMD` emptied.
+
+Nine slips (`argumentsAppendToCmd`, `argumentsReplaceEntrypoint`, `shellFormTakesArguments`, `overrideKeepsCmd`, `overrideIsSplit`, `entrypointKeepsBaseCmd`, `earlierCmdCounts`, `brokenExecForm`, `shellCmdIsWords`). A mismatch none explains is **unchecked**. A claim is never wrong over a base image's unseen `ENTRYPOINT`, and a wrapper `ENTRYPOINT` (ends in `--`, `tini`/`dumb-init`, a lone script) is taken to run the command it is handed. One mistake, one finding: a line whose slip a stated claim already shows is dropped. `EntrypointLedger` (actor) keeps the last Dockerfile and the built tags and marks repeats. Depends on `dockerfile-claim-kit` 1.0.0 for its parser. PID 1 and signal claims are left unread: on the oracle, dash kept the shell as PID 1 for a one-command shell-form `CMD`, while bash exec'd the command (even the last of `a && b`), and an answer rarely says which shell the base has.
+
+**Oracle findings new to this series** (Docker 27.4.0, classic builder, `swift:6.0` base):
+- **The build cache lied.** Without `--no-cache`, `FROM base0` + `ENTRYPOINT` reused a cached layer from a Dockerfile that set `CMD` in the same stage, and reported the inherited `CMD` as kept. With `--no-cache` it is emptied, as the source says. `Scripts/parity.py` always passes `--no-cache`.
+- `docker create` + `docker inspect` (`Path`, `Args`) gives the daemon's composition exactly, with no need to run anything.
+- A shell-form `ENTRYPOINT` with run arguments stores them as `$0`, `$1`, ...
+
+**Gates (1.0.1).**
+- Build: 0 diagnostics, tests included.
+- Tests: **49 tests in 10 suites** (294 parameterized cases).
+- Coverage: **100.00% lines (1354) and functions (266) on all 19 library files**, regions 98.43% (878/892), measured with `--no-parallel`.
+- Lint: `swiftlint --strict` 0 (22 files).
+- Parity: 39 Dockerfiles. The 37 that build match `docker inspect`, and their 56 runs match `docker create`; the 2 that stop were predicted.
+- Linux (`swift:6.0`, colima): 0 warnings, 49 tests, demo md5 identical (`0dbf4016`).
+- Mutants: an `ENTRYPOINT` that keeps an inherited `CMD` (8 recorded issues) and arguments added to `CMD` (28), each killed by exit status.
+
+**Probing before tagging 1.0.0.** The first probes passed:
+- 10 correct answers stayed quiet;
+- 9 wrong ones were caught with the right slip;
+- 12 other-tool and other-domain sentences made no claim;
+- 8 Dockerfiles alone gave the expected lines.
+
+An advisor review then listed 11 more probes, and all reproduced:
+- `bash` under `ENTRYPOINT ["/entrypoint.sh"]`, and a shell `CMD` under `tini --`;
+- an apostrophe in the sentence hiding the `docker build -t` tag (tags are now read from code only);
+- six correct statement sentences (verbs matched anywhere; now word order and closeness are checked);
+- a broken exec-form `ENTRYPOINT` giving two findings;
+- a before/after answer read against the wrong Dockerfile.
+
+All were fixed and kept as tests before tagging.
+
+**1.0.1, same day.** Scenario 110's corrected answer (a final stage with `ENTRYPOINT ["tini", "--"]` and its own `CMD`) got an "inherited CMD emptied" caution from 1.0.0, and "the final stage ... runs" was read as "only the last CMD counts". A later `CMD` now clears the first, and that statement now needs a phrase such as "last CMD". The answer is a test now. Tag and Release `1.0.1`; the README has a Versions section.
+
+**Demo.** 9 scenarios, 59 lines, two runs byte-identical, unchanged by 1.0.1.
+
+**STEP 6b.** `main` was pushed and checked before each tag. 1.0.0 (`5c9cbf9`) and 1.0.1 (`ec2ec59`) were each `git clone --depth 1`'d and byte-identical to the work copy. Each built with 0 diagnostics, passed 49 tests, measured 100.00% lines and functions, linted 0 (22 files), and produced demo output identical to the capture. Dependencies resolved from GitHub (`dockerfile-claim-kit` 1.0.0, `dockerignore-claim-kit` 1.0.1, `gitignore-claim-kit` 1.0.2). The vault folder was made with `vault-git.sh init`, checkpointed four times to `pending/entrypoint-claim-kit`, filled from GitHub, and fast-forwarded to `1.0.1` (byte-identical). `vault-git.sh check EntrypointClaimKit`: **OK** (git data at `~/dev/vault-gitdirs/iOS-Tasks__Portfolio-Projects__EntrypointClaimKit.git`).
+
+**7a — llm-ecosystem-demo, scenario 110** (`9a2b80e`, pushed, `92003a3..9a2b80e`). One route (`entrypoint-host`, $0.85/$3.40 per million, priced explicitly), scripted replies, `TokenMeterKit`, one `EntrypointLedger`.
+- Answer 1 (`ENTRYPOINT ["python", "app.py"]`, `CMD ["--port", "80"]`): `DockerfileClaimKit` returns `noClaims`. `EntrypointClaimKit` says **wrong**, with 2 wrong claims (`argumentsAppendToCmd`, `argumentsReplaceEntrypoint`).
+- The rewrite is **verified**, 4 of 4.
+- The `tini` follow-up says setting ENTRYPOINT keeps the base stage's CMD: **wrong**, 2 claims. With `CMD` set again it is **verified**, 2 of 2.
+- Ledger: 4 reviews, 10 claims, 4 flagged, 0 repeated.
+- Metered **$0.0016558**; running total **$0.3046137 across one hundred and ten scenarios** (exactly $0.3029579 + $0.0016558). The closing line's count now says one hundred and ten.
+- Output 1994 lines (1969 + 24 scenario lines + 1 pricing row), two runs byte-identical. Build 0 diagnostics, lint 0 (115 files). `Package.resolved` gained only `entrypoint-claim-kit` at `1.0.1` (the demo requires 1.0.1).
+- README: package count, table row, scenario 110 section, total, build/run counts. Scenario 109's "87 files" is corrected (69 contexts hold 100 files; 87 are in the 62 that build), closing yesterday's correction note. About updated.
+- **Fresh-clone check:** `git clone` of `main`, identical to the work tree. Clean build 0 diagnostics, run output byte-identical, lint 0. Vault mirror fast-forwarded to `9a2b80e`.
+
+**7b — ai-chat-app** (`6cf2840`, pushed, `530b6ca..6cf2840`): **`entrypointCheck` does real work.**
+- **Where it runs.** Post-model, after `dockerfileCheck`, on the text the user will see (`PostModelPipeline+EntrypointCheck.swift`, static, no network).
+- **History.** Earlier answers are replayed through one `EntrypointLedger`, so a later "`docker run api --debug` runs ..." is judged against the earlier Dockerfile and marked as said again.
+- **No refusal.** A claim that does not hold gets a note under the bubble ("Container command check: ..."), kept out of the text, the cache and the history. Outcomes: `.ran` / `.noOp` / `.skipped` (a withheld answer).
+- **One mistake, one note.** `$VAR` in an exec-form `CMD` is `dockerfileCheck`'s, and the kit does not read it; a test asserts only the Dockerfile note appears.
+- **Stage table.** `PipelineStage.entrypointCheck` maps to `EntrypointClaimKit`, title "Container commands"; the stage-table test is at 112 packages. One entry in `ChatBubble.reviewNotes`.
+
+Gates (documented command, `name=iPhone 17 Pro` on iOS 27.2 (`BD64BAD5`), DerivedData `/tmp/aichatapp-coverage-dd`). The DerivedData was gone, purged since 11-18, so all 112 packages were resolved fresh. The first full run used 1.0.0 (1447 tests, 24/24 UI, passed). After 1.0.1, `project.yml` was raised to `from: 1.0.1` and the gate rerun, and the log shows `EntrypointClaimKit ... @ 1.0.1`. A second attempt was stopped after a minute to rewrap a doc comment (5 line-length violations), then restarted.
+- `xcodegen generate` clean. `swiftlint --strict` 0 violations, 167 files. 0 compiler warnings (the three `appintentsmetadataprocessor` notices only).
+- **1447 tests in 221 suites, all passing.** 8 new: 7 `EntrypointCheckStageTests`, plus 1 render test.
+- **24/24 UI tests**, `** TEST SUCCEEDED **`.
+- Coverage **97.60% (16812/17225)**, a full run, against 97.60% (16784/17197) on 11-18 (97.6023% against 97.5984%): **the gate is met**. `PostModelPipeline+EntrypointCheck.swift` 24/24, `PostModelPipeline.swift` 235/235, `PipelineStage+Catalog.swift` 239/239, `ChatBubble.swift` 54/54 (all 100.00%). `ChatView.swift` 78.50% (588/749), unchanged.
+- Secrets scan before commit: 0 keys in the staged diff. No `Secrets.xcconfig` in the /tmp clone (it built from the placeholder).
+
+README:
+- Status rows, package count (112; 108 doing real work), a "Container commands" section, the package-count history line (112 on 2026-11-19), the Layout count.
+- A new "What was learned the hard way" entry: raise `from:` when a package gets a fix the app relies on, because a warm DerivedData keeps the old pin.
+- About updated to 112 packages and 1447 unit tests.
+
+**Clean-clone check:** `git clone` of `main` from GitHub (`6cf2840`) into `/tmp/llm1119/app-verify`, identical to the work tree (excluding `.git` and the generated project), no `Secrets.xcconfig`. `xcodegen generate` was clean and `swiftlint --strict` gave 0 (167 files). The documented `xcodebuild ... test` ran on a new DerivedData (`/tmp/aichatapp-verify-1119`, seeded with the package checkouts; the log shows `EntrypointClaimKit ... @ 1.0.1`): **1447 tests in 221 suites passed, 24/24 UI tests, `** TEST SUCCEEDED **`** first time, 0 compiler warnings. Vault mirror: `main` ref fetched to `6cf2840`; the working tree stays on another session's `fix/ui-polish-picker-diagnostics-settings`.
+
+**Maintenance** (next in line from 11-18: `claim-consistency-kit`, `source-conflict-kit`). Fresh clones, Swift 6.4.2:
+- `claim-consistency-kit` (`a529e17`, public): 0 diagnostics, **121 tests** (XCTest), **100.00%** lines (707), functions (114) and regions (364), `swiftlint --strict` 0 (27 files), tag present. README (121 tests, 100.00% 364/114/707) and About: match.
+- `source-conflict-kit` (`773430f`, public): 0 diagnostics, **64 tests**, **100.00%** lines (489), functions (107) and regions (248), lint 0 (18 files), tag present. README (64 tests, 100.00% 248/107/489) and About: match.
+
+A first pass reported 98.9% and 98.5% because the path filter used `/tmp` while the coverage mapping holds `/private/tmp`, so test files were counted. Filtered by `/private/tmp/.../Sources/<Target>`, both are 100.00%. No fixes, no pushes. Next in line, in series order: `claim-segmenter-kit`, `citation-binding-kit`.
+
+**Harness notes.** GateGuard asked for facts before the first Bash command, before the README write, before the removal of the experiment images, and twice each before one scratch delete (avoided by using a new path) and a `git reset --soft`. The single-commit release branch was then made with `git commit-tree` instead. The 33 `exp_*` images from the oracle experiments were removed; `swift:6.0` stays.
+
+**Still open:** for `EntrypointClaimKit`:
+- PID 1 and signal claims are unread. The shell decides them, and the base image's shell is rarely stated.
+- A base image's own `ENTRYPOINT`/`CMD`/`SHELL` are unknown.
+- BuildKit was read, not run.
+- Compose `command:`/`entrypoint:`, Kubernetes `command`/`args`, `--target` and `HEALTHCHECK` commands are not read.
+- What an entrypoint script does with `"$@"` is not followed.
+- A lone extensionless wrapper (s6-overlay's `["/init"]`, `["/app/start"]`) is treated as the program: a probe with "`docker run app bash` starts `bash`" under it is called wrong. It looks the same as the app's own binary. This is a 1.0.2 candidate (perhaps a list of known init paths), and README-only commit `b0fc505` lists it under Limits. The same commit corrects the README's PID 1 sentence; the tags did not move.
+
+Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL semantics for `SQLClaimKit`; no GitHub Release object for `yaml-claim-kit` 1.0.0 or `sql-claim-kit` 1.1.1; DockerfileClaimKit 1.0.1 candidate (skip names the base image sets, the `NODE_VERSION` case).
+
+**Next candidates:**
+1. `EXPOSE`/`-p` claims (which port is reachable, what `EXPOSE` does), checked with the same `docker create`/`docker inspect` oracle.
+2. Compose `command:`/`entrypoint:` claims, with `docker compose config` as the oracle, if compose is installed.
+3. Carried: `git check-ignore -v` transcripts; SQL query equivalence.
+
+**Repos:**
+- https://github.com/rajatslakhina/entrypoint-claim-kit (today's package, `1.0.1`, public; local `Portfolio Projects/EntrypointClaimKit`, `vault-git.sh check` OK)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 110, `9a2b80e`)
+- https://github.com/rajatslakhina/ai-chat-app (`entrypointCheck`, 1447 tests, 24/24 UI, 97.60%; `6cf2840`)
