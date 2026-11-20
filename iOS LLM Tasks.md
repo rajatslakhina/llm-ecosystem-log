@@ -5668,3 +5668,102 @@ Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL 
 - https://github.com/rajatslakhina/entrypoint-claim-kit (today's package, `1.0.1`, public; local `Portfolio Projects/EntrypointClaimKit`, `vault-git.sh check` OK)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 110, `9a2b80e`)
 - https://github.com/rajatslakhina/ai-chat-app (`entrypointCheck`, 1447 tests, 24/24 UI, 97.60%; `6cf2840`)
+
+## 2026-11-20 — ComposeClaimKit shipped; ai-chat-app checks what an answer says about a compose project
+
+*The 11-20 run (Friday). The session's first command ran at 14:54 IST. No other run session of this series was active, and nothing was pending: no package folder or repo was newer than the 11-19 log. The one other new repo today, `agent-peer-sync-kit` (08:44 UTC), belongs to another series. The cloud trigger was read with `RemoteTrigger`: it is enabled with cron `0 8 * * *` (UTC, 13:30 IST daily), but `list_runs` shows no run session since 2026-11-12, so there was no cloud hand-off to read and research started fresh. `gh repo create rajatslakhina/compose-claim-kit --public` went through as a single command, and so did the push, the tag push and `gh release create`. Nothing is held.*
+
+**Topics considered.** Searches this run:
+- Compose mistakes in LLM and assistant answers. Only practitioner posts and skill catalogs turned up, no study. The recurring themes were `depends_on` without a health check, ports bound to every interface, misnamed services, and services that cannot find each other.
+- Applied-AI engineering this week. The digests repeat that verification, not generation, is the bottleneck, and that deterministic checks belong inside the loop.
+
+The 11-19 log's second candidate was compose claims with `docker compose config` as the oracle, if compose is installed. Docker Compose 2.32.4 is installed. **Chosen:** that. The Docker packages so far check one image and one container; compose is where several containers meet, and its mistakes (a published port used between services, `localhost` inside a container, a misread substitution) pass `docker compose config` and fail only at run time. No study of LLM compose errors was read, so none is cited.
+
+**Package built: `ComposeClaimKit`** (https://github.com/rajatslakhina/compose-claim-kit, public; tag and GitHub Release `1.0.0` at `fa8de35`). It is a model of how compose reads a file and how Docker routes between containers:
+- **Reading.** A YAML subset reader (block mappings and sequences, flow collections of scalars, quoted and plain scalars, block scalars kept as text) that refuses anchors, aliases, `<<` merges and tags rather than misread them. Then compose's substitution (`$V`, `${V}`, `:-`, `-`, `:?`, `?`, `:+`, `+`, `$$`) over the shell's `export` lines and the `.env` the chat shows (the shell wins), `.env` parsed by the probed rules, and the short and long port syntaxes with ranges.
+- **Claims.** Addresses from the host (only a published port on a loopback or every-interface address reaches a container) and between containers (`service:containerPort`; the published port is refused), `localhost` inside a named service, port mappings, substitutions ("with `TAG` unset, `${TAG:-latest}` becomes `latest`"), 16 statements (`depends_on` and readiness, what `.env` is for, shell vs `.env`, `environment:` vs `env_file:`, `expose`, where a published port listens, `HOST:CONTAINER` order, `localhost` in a container), and the compose file's own lines (addresses in `environment:`, `depends_on` problems).
+- **Judging.** 14 slips and 3 caveats. A substitution that does not match is wrong only when one of five misreadings (`-` as `:-`, `:-` as `-`, `?` as `:?`, `$$` expanded, `.env` over the shell) produces the answer's value; any other mismatch is unchecked. A fragment that leaves out a service, an image's unseen `HEALTHCHECK`, a variable the chat never sets and a web URL a browser may read never make a claim wrong. One mistake, one finding. `ComposeLedger` (actor) keeps the last compose file, the variables and the flagged claims. No dependencies.
+
+**Oracle findings new to this series** (Docker Compose 2.32.4, colima Docker 27.4.0):
+- `docker compose config --format json` under `env -i` is an exact oracle; it writes a literal `$` back as `$$` (the container gets one `$`, checked with `docker compose create` + `docker inspect`).
+- Compose YAML is 1.2: an unquoted `- 22:22` stays a string. `0:80` is accepted (Docker picks the port); a range length mismatch is refused.
+- A `- NAME` with no value takes the shell's value, else `.env`'s. `${V?}` passes for an empty `V`; `${V:?}` fails.
+- `config` accepts `condition: service_healthy` on a service with no healthcheck; `up` stops with "dependency failed to start: container ... has no healthcheck configured".
+- On a running two-container project, `db:5432` answered from `app`, while `db:5433` (the published port) and `localhost:5432` were refused; from the host only `localhost:5433` answered.
+- The official images' `EXPOSE` (postgres, mysql, mariadb, redis, mongo, memcached, rabbitmq, nginx, httpd) was read from each image config in the Docker Hub registry without pulling; all nine matched the kit's table.
+
+**Gates (1.0.0).**
+- Build: 0 diagnostics, tests included.
+- Tests: **53 tests in 11 suites** (280 parameterized cases).
+- Coverage: **100.00% lines (1975) and functions (411) on all 22 library files**, regions 98.95% (1316/1330), measured with `--no-parallel`.
+- Lint: `swiftlint --strict` 0 (25 files).
+- Parity: 73 compose files through `docker compose config`; 72 match, and the one with an anchor and a merge key is declined by design.
+- Linux (`swift:6.0`, colima): 0 warnings, 53 tests, demo md5 identical (`e79e2d61`).
+
+**Probing before tagging 1.0.0.** The first probes passed: 20 correct answers stayed quiet, 12 wrong ones were caught (10 with the right slip; 2 unpinnable mistakes stay unflagged), and 7 other-domain answers made no claim. An advisor review then traced ordinary multi-clause answers to wrong findings, and all reproduced:
+- "Variables set in `.env` are not passed to the container" (polarity read at "set"), "`expose` makes the port available to other containers, not to the host", "`.env` overrides the default ...; your shell overrides both", "`5432:5432` listens on all interfaces, not only on localhost";
+- a fragment's `depends_on` on a service it did not show (called wrong);
+- "The `web` service is available at `http://localhost:8000`" (judged from inside `web`);
+- `CORS_ORIGIN: http://localhost:3000` (a caution on a correct config);
+- a `TAG=1.26 docker compose up` example block turning an earlier correct sentence wrong;
+- `pgdata: {}` and `command: >` making whole files unreadable; GitLab CI and Symfony `services.yaml` read as compose.
+
+All were fixed and kept as tests before tagging: statements are read per clause with the topic before the verb and no other negation, generic verbs are gone, host cues beat bare nouns, URL schemes decide `environment:` addresses, only `export` lines carry over, and a compose file needs a service with `image:` or `build:`. 28 correct answers are quiet now.
+
+**Demo.** 10 scenarios, 61 lines, two runs byte-identical.
+
+**STEP 6b.** `main` was pushed and checked before the tag. A `git clone --depth 1` was byte-identical to the work copy, built with 0 diagnostics, passed 53 tests, measured 100.00% lines and functions, linted 0, and produced demo output identical to the capture (md5 `e79e2d61`). The vault folder was made with `vault-git.sh init`. `vault-git.sh check ComposeClaimKit`: **OK** (git data at `~/dev/vault-gitdirs/iOS-Tasks__Portfolio-Projects__ComposeClaimKit.git`).
+
+**7a — llm-ecosystem-demo, scenario 111** (`9f6f2a8`, pushed, `9a2b80e..9f6f2a8`). One route (`compose-host`, $0.80/$3.20 per million, priced explicitly), scripted replies, `TokenMeterKit`, one `ComposeLedger`.
+- Answer 1 (`db` published as `5433:5432`, `DATABASE_URL` and the prose pointing at `db:5433`, "`depends_on` makes sure the database is ready"): `EntrypointClaimKit` returns `noClaims`. `ComposeClaimKit` says **wrong**, with 2 wrong claims (`publishedPortInsideNetwork`, `startedMeansReady`); the same `db:5433` in `environment:` is the same mistake and gets no second finding.
+- The rewrite (`db:5432`, `localhost:5433` from the laptop, `condition: service_healthy` with a `pg_isready` healthcheck) is **verified**, 2 of 2.
+- The `.env` follow-up (`postgres:${PG_TAG-16}` with `PG_TAG=`, said to give `postgres:16`, and `.env` said to reach the container): **wrong**, 2 claims (`dashCoversEmpty`, it gives `postgres:`; `dotEnvReachesContainer`). With `${PG_TAG:-16}` it is **verified**, 2 of 2.
+- Ledger: 4 reviews, 8 claims, 4 flagged, 0 repeated.
+- Metered **$0.0015136**; running total **$0.3061273 across one hundred and eleven scenarios** (exactly $0.3046137 + $0.0015136). The closing line's count now says one hundred and eleven.
+- Output 2016 lines (1994 + 21 scenario lines + 1 pricing row). Two runs differ only in the TraceKit span timing line (0 ms against 1 ms), as before. Build 0 diagnostics, lint 0 (116 files). `Package.resolved` gained only `compose-claim-kit` at `1.0.0`.
+- README: package count, table row, scenario 111 section, total, build/run counts.
+- **Fresh-clone check:** `git clone` of `main`, identical to the work tree. A from-scratch build (package checkouts copied, nothing compiled) had 0 diagnostics; the run output matched except the timing line (0 ms against 7 ms); lint 0. Vault mirror fast-forwarded to `9f6f2a8`.
+
+**7b — ai-chat-app** (`0e80b07`, pushed, `6cf2840..0e80b07`): **`composeCheck` does real work.**
+- **Where it runs.** Post-model, after `entrypointCheck`, on the text the user will see (`PostModelPipeline+ComposeCheck.swift`, static, no network).
+- **History.** Earlier answers are replayed through one `ComposeLedger`, so a later "`api` connects to `db:5433`" is judged against the earlier compose file and marked as said again.
+- **No refusal.** A claim that does not hold gets a note under the bubble ("Compose check: ..."), kept out of the text, the cache and the history. Outcomes: `.ran` / `.noOp` / `.skipped` (a withheld answer).
+- **One mistake, one note.** A test asserts that a compose answer gets only the compose note: `yamlCheck`, `dockerfileCheck` and `entrypointCheck` leave it alone.
+- **Stage table.** `PipelineStage.composeCheck` maps to `ComposeClaimKit`, title "Compose projects"; the stage-table test is at 113 packages. One entry in `ChatBubble.reviewNotes`.
+
+Gates (documented command, `name=iPhone 17 Pro` on iOS 27.2 (`BD64BAD5`), DerivedData `/tmp/aichatapp-coverage-dd`, intact from 11-19 with 116 checkouts). Another session was running UI tests on its own simulator, and the load average stood at 560-630.
+- The first full run: 1454 tests in 222 suites with **1 issue**, 24/24 UI. The failing test was mine: it checked that other-domain answers stay quiet, but under the test file's shared question, which names docker compose, so the bash sentence was rightly read (and held). The test now passes a neutral question; the stage was not changed.
+- The second full run: `xcodegen generate` clean, `swiftlint --strict` 0 violations (168 files), 0 compiler warnings (the `appintentsmetadataprocessor` notice only). **1454 tests in 222 suites, all passing.** 7 new: 6 `ComposeCheckStageTests`, plus 1 render test. **24/24 UI tests**, `** TEST SUCCEEDED **`. The log shows `ComposeClaimKit ... @ 1.0.0`.
+- Coverage **97.61% (16841/17254)**, a full run, against 97.60% (16812/17225) on 11-19: **the gate is met**. `PostModelPipeline+ComposeCheck.swift` 24/24, `PostModelPipeline.swift` 236/236, `PipelineStage+Catalog.swift` 241/241, `ChatBubble.swift` 56/56 (all 100.00%). `ChatView.swift` 78.50% (588/749), unchanged.
+- Secrets scan before commit: 0 keys in the staged diff. No `Secrets.xcconfig` in the /tmp clone (it built from the placeholder).
+
+README: status rows, package count (113; 109 doing real work), a "Compose projects" section, the package-count history line (113 on 2026-11-20), the Layout count, and a new "What was learned the hard way" entry: a stage test's shared question opens the stage's gate, so an other-domain loop needs its own neutral question.
+
+**Clean-clone check:** `git clone` of `main` from GitHub (`0e80b07`) into a scratch folder, identical to the work tree (excluding `.git` and the generated project), no `Secrets.xcconfig`. `xcodegen generate` was clean and `swiftlint --strict` gave 0 (168 files). The documented `xcodebuild ... test` ran on a new DerivedData (`/tmp/aichatapp-verify-1120`, seeded with the package checkouts; the log shows `ComposeClaimKit ... @ 1.0.0`): **1454 tests in 222 suites passed, 24/24 UI tests, `** TEST SUCCEEDED **`** first time, 0 compiler warnings. Vault mirror: `main` ref fetched to `0e80b07`; the working tree stays on another session's `fix/ui-polish-picker-diagnostics-settings`.
+
+**Maintenance** (next in line from 11-19: `claim-segmenter-kit`, `citation-binding-kit`). Fresh clones, Swift 6.4.2:
+- `claim-segmenter-kit` (`c016da0`, public): 0 diagnostics, **73 tests** (XCTest), **100.00%** lines (502), functions and regions, `swiftlint --strict` 0 (21 files), tags `1.0.0` and `1.1.0`. README (73 tests, 100.00% of 293 regions, 94 functions, 502 lines) and About: match. Its README's "99.5%" is an example input in a table, not a claim.
+- `citation-binding-kit` (`5395992`, public): 0 diagnostics, **73 tests in 15 suites** (Swift Testing), **100.00%** lines (439), functions and regions, lint 0 (19 files), tags `1.0.0` and `1.0.1`. README (73 tests, 100.00%) and About: match.
+
+Coverage was filtered by `/private/tmp/.../Sources/<Target>`. No fixes, no pushes. Next in line, in series order (first mention in this log): `claim-decontextualizer-kit`, `answerability-kit`.
+
+**Harness notes.** GateGuard asked for facts before the first Bash command, before one scratch delete (avoided: the clone went to a new path), and before each of the two new memory files. Reads in the iCloud mirrors timed out ("mmap failed: Operation timed out" on `git status` in `LLMEcosystemDemo`, a `grep -r` that ran for minutes), so 7a and 7b were done in scratch clones, and the mirror updates (a fast-forward, a `fetch origin main:main`) each took several minutes in the background. `parity.py` takes over two minutes for 73 cases and was run in the background.
+
+**Still open:** for `ComposeClaimKit`:
+- Override files and `-f a -f b` merges are not read; `extends`, `include`, profiles, `network_mode`, custom `networks:`, `links` and `extra_hosts` make claims about a service unchecked.
+- `env_file:` contents are not read; a key set only there has an unknown value.
+- Only declared ports and nine official images' `EXPOSE` count as a container's ports.
+- Statements come from a fixed lexicon; a correct statement in other words is not read, and sentences with a negation away from the verb make no statement (by design).
+- `command:`/`entrypoint:` in compose (and what they do to the image's `CMD`) are not read; `EntrypointClaimKit` stays out of compose sentences.
+
+Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL semantics for `SQLClaimKit`; no GitHub Release object for `yaml-claim-kit` 1.0.0 or `sql-claim-kit` 1.1.1; DockerfileClaimKit 1.0.1 candidate (skip names the base image sets); EntrypointClaimKit 1.0.2 candidate (known init paths such as s6-overlay's `/init`). The cloud trigger has created no run session since 11-12 (enabled, cron `0 8 * * *` UTC); Rajat may want to look at it.
+
+**Next candidates:**
+1. Compose `command:`/`entrypoint:` claims, reusing `EntrypointClaimKit`'s model with `docker compose create` + `docker inspect` as the oracle (compose clears the image's `CMD` when `entrypoint:` is set).
+2. Compose override merges (`docker compose -f a -f b config` as the oracle): which keys replace and which append.
+3. Carried: `EXPOSE`/`-p` claims for `docker run`; `git check-ignore -v` transcripts.
+
+**Repos:**
+- https://github.com/rajatslakhina/compose-claim-kit (today's package, `1.0.0`, public; local `Portfolio Projects/ComposeClaimKit`, `vault-git.sh check` OK)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 111, `9f6f2a8`)
+- https://github.com/rajatslakhina/ai-chat-app (`composeCheck`, 1454 tests, 24/24 UI, 97.61%; `0e80b07`)
