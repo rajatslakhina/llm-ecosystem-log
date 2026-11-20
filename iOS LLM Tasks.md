@@ -5767,3 +5767,28 @@ Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL 
 - https://github.com/rajatslakhina/compose-claim-kit (today's package, `1.0.0`, public; local `Portfolio Projects/ComposeClaimKit`, `vault-git.sh check` OK)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 111, `9f6f2a8`)
 - https://github.com/rajatslakhina/ai-chat-app (`composeCheck`, 1454 tests, 24/24 UI, 97.61%; `0e80b07`)
+
+## 2026-11-20 — ComposeClaimKit 1.0.1; correct contrast sentences stay quiet (follow-up to the 11-20 entry, no new package)
+
+*Same session. After the entry above was pushed, a final advisor review listed four correct answers that contrast two things without a negation. All four reproduced on 1.0.0 as wrong findings:*
+- "`expose` makes the port available to other containers, while `ports` publishes it to the host." (`exposePublishes`)
+- "Containers connect to each other by service name, and you connect from the host via `localhost:5433`." (`localhostReachesServices`)
+- "The values in `.env` are passed to the container through `environment:`." (`dotEnvReachesContainer`; this is the standard `KEY: ${KEY}` explanation)
+- With `frontend` and `backend` both published: "The `frontend` runs in your browser and calls the API at `http://localhost:8000`." (judged from inside `frontend`)
+
+**1.0.1** (tag and GitHub Release at `15fc126`):
+- Clauses also split at ", and", ", while" and ", whereas".
+- `expose` is not said to publish when the clause names `ports`.
+- `.env` is not said to reach the container when the sentence names `environment` or `${`.
+- A `localhost` address in a sentence with both a host cue and a container cue makes no claim.
+- A top-level `include:` makes the file unreadable. The 11-20 entry said `include` and profiles make claims unchecked; 1.0.0 did neither. Now `include` does, and the README says `profiles:` is not read.
+
+The four answers are tests now (`ContrastProbeTests`). **Gates:** 55 tests in 12 suites (284 parameterized cases); **100.00% lines (1990) and functions (412)** on all 22 files; regions 98.88% (1325/1340), with `--no-parallel`; `swiftlint --strict` 0 (25 files); demo output unchanged (md5 `e79e2d61`). A `git clone --depth 1` of `main` was byte-identical, built with 0 diagnostics, passed 55 tests, measured 100.00% lines and functions, linted 0 and produced the same demo output. The README's Quality table, Versions section and probe counts (32 correct answers quiet; of 12 wrong answers, 10 caught with the right slip and 2 left unflagged) are updated, and so is `tests.svg`. The 11-20 entry's "12 wrong ones were caught" means those 10 plus the 2 left unflagged.
+
+**ai-chat-app** (`86760cf`, pushed, `0e80b07..86760cf`): `project.yml` says `from: 1.0.1`. Gate (documented command, `BD64BAD5`, `/tmp/aichatapp-coverage-dd`): the log shows `ComposeClaimKit ... @ 1.0.1`. **1454 tests in 222 suites, all passing**, **24/24 UI tests**, `** TEST SUCCEEDED **`, 0 compiler warnings, `swiftlint --strict` 0 (168 files), coverage **97.61% (16841/17254)**, unchanged. Secrets scan: 0 keys. README status rows updated. **Clean-clone check:** `git clone` of `main` (`86760cf`), identical to the work tree, no `Secrets.xcconfig`, `xcodegen` clean, lint 0 (168 files); the documented gate on a new DerivedData (`/tmp/aichatapp-verify-1120b`, seeded with the package checkouts) resolved `@ 1.0.1` and passed **1454 tests in 222 suites, 24/24 UI tests, `** TEST SUCCEEDED **`** first time, 0 compiler warnings. Vault mirror: `main` ref fetched to `86760cf`.
+
+**llm-ecosystem-demo** is unchanged: it pins `compose-claim-kit` 1.0.0 in `Package.resolved`, and none of scenario 111's sentences is one of the four shapes. About texts: `llm-ecosystem-demo` now says 111 packages, 111 scenarios and $0.3061273, and `ai-chat-app` says 113 packages and 1454 unit tests (both said 110/112 and 1447 since 11-19).
+
+**Housekeeping.** The `exp4_default` network left by an oracle probe (`docker compose create` then `rm -f`) was removed.
+
+**Repos:** https://github.com/rajatslakhina/compose-claim-kit (`1.0.1`), https://github.com/rajatslakhina/ai-chat-app (`86760cf`).
