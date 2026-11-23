@@ -5792,3 +5792,97 @@ The four answers are tests now (`ContrastProbeTests`). **Gates:** 55 tests in 12
 **Housekeeping.** The `exp4_default` network left by an oracle probe (`docker compose create` then `rm -f`) was removed.
 
 **Repos:** https://github.com/rajatslakhina/compose-claim-kit (`1.0.1`), https://github.com/rajatslakhina/ai-chat-app (`86760cf`).
+
+## 2026-11-23 — ComposeMergeClaimKit shipped; ai-chat-app checks what an answer says merged compose files do
+
+*The 11-23 run (Monday). The session's first command ran at 14:54 IST. No other run session of this series was active, and nothing was pending: no package folder or repo was newer than the 11-20 log. The one other new repo today, `hybrid-inference-router-kit` (08:40 UTC), belongs to another series. The cloud trigger was read with `RemoteTrigger`: `list_runs` still shows no run session since 2026-11-12, so research started fresh. `gh repo create rajatslakhina/compose-merge-claim-kit --public` went through as a single command, and so did each push, the tag pushes and both `gh release create` calls. Nothing is held.*
+
+**Topics considered.** Searches this run:
+- Applied-AI engineering this week. The search returned nothing dated this week (only undated or older newsletter pages), so it did not steer the pick.
+- Docker Compose override and merge mistakes. The docs and practitioner posts agree on the confusion: a later file's `ports` are appended, not replaced; `ports: []` does not clear them; `!override` and `!reset` exist for exactly that.
+
+The 11-20 log's second candidate was compose override merges with `docker compose -f a -f b config` as the oracle. **Chosen:** that. ComposeClaimKit checks one compose file; merges are where answers describe two files together, and every wrong picture of the merge passes `docker compose config` and shows up only when the stack runs. The first candidate (compose `command:`/`entrypoint:`) stays in line.
+
+**Package built: `ComposeMergeClaimKit`** (https://github.com/rajatslakhina/compose-merge-claim-kit, public; tags and GitHub Releases `1.0.0` at `4a1f006` and `1.0.1` at `309c56c`). A model of how compose picks and merges files:
+- **Reading.** Fenced compose files get their names from the info string, a first comment line or the line above the fence (`**docker-compose.override.yml**`). `docker compose` commands are tracked in order: a sentence uses its own command, else the latest one before it (`-f` only before the subcommand, so `logs -f` is not a file list). The YAML reader (ComposeClaimKit's subset) also accepts `!reset` and `!override` on a mapping's value and refuses every other tag.
+- **Merging.** Base file plus override by default, or the `-f` list in order. `ports` merge by `{ip, published, target, protocol}`, `volumes`/`secrets`/`configs` by target, `environment`/`labels`/`annotations`/`sysctls` by key (list and map forms), `depends_on` by name, `command`/`entrypoint`/healthcheck `test` replaced, other lists appended without duplicates, scalars replaced; `!reset` drops, `!override` replaces; an empty `web:` keeps the earlier service.
+- **Claims.** Stated results (the host ports a service publishes, "instead of", "no longer", "only", "replaces X with Y"; its image and command; a variable's value, removal or survival) and 9 merge rules stated true or false (topic before verb, one negation, verbs bound to their own topic). File lines: a later file's `key: []` under a service an earlier file gives items for.
+- **Judging.** A stated result that differs from the merge is wrong only when one of 8 misreadings reproduces it (`listReplaced`, `emptyListClears`, `mappingReplaced`, `commandAppended`, `earlierFileWins`, `overrideNotLoaded`, `overrideLoadedWithFile`, `extraFileAutoLoaded`); `pathsRelativeToOverride` is statements only. Four of those give what one file says alone, so they need a merge cue ("with both files", "now", "still", "no longer") or the sentence's own command; `overrideLoadedWithFile` needs the `-f` in the same sentence. A result that holds because of `!override` gets a caveat (Compose 2.24.4+). `MergeLedger` (actor) keeps files across turns; a turn that shows files uses those only. No dependencies.
+
+**Oracle findings new to this series** (Docker Compose 2.32.4, colima):
+- `dns` and `expose` are appended without duplicates, first-seen order; the docs say only "appended".
+- `8080:80`, `127.0.0.1:8080:80` and `8080:80/udp` are three port items; short and long syntax with the same key merge.
+- `command: []` and `command: ""` in a later file do clear the command, unlike `ports: []`.
+- A bare `- LOG` in a later `environment` replaces the value with the shell's.
+- Two override files present: compose uses `compose.override.yaml` and warns. Relative paths in `-f sub/override.yml` resolve from the project directory.
+- `env_file` lists are appended; inline `environment:` beats both files.
+
+**Gates (1.0.1).**
+- Build: 0 diagnostics, tests included.
+- Tests: **50 tests in 12 suites** (343 parameterized cases).
+- Coverage: **100.00% lines (1976) and functions (420) on all 20 library files**, regions 99.20% (1366/1377), `--no-parallel`.
+- Lint: `swiftlint --strict` 0 (21 files).
+- Parity: `Scripts/parity.py` ran 200 merge cases (30 by hand, 170 generated) through `docker compose -f ... config --format json`; the kit matches all 200 on image, command, entrypoint, ports, environment, volumes, expose, dns, labels, `depends_on` and healthcheck `test`. The first run matched 199; the miss was a later file's empty `web:`, fixed before tagging.
+- Linux (`swift:6.0`, colima, source piped by tar): 0 diagnostics, 50 tests, demo md5 identical (`697a5791`).
+
+**Probing before tagging.** 42 correct answers stayed quiet and 19 wrong ones were caught before the first tag attempt. An advisor review then traced, by reading the code, eight correct shapes that would come back wrong: one-file sentences ("`DEBUG` is `0` by default; the override sets it to `1`", "`web` normally runs `npm start`; the override changes it to `npm run dev`"), a lone later `-f` command governing earlier sentences, "unlike `command`, `ports` ... are merged" (verb bound to the wrong topic), "each later one overrides it", "`ports: []` removes nothing", "you must pass `-f docker-compose.prod.yml`". All were fixed and kept as tests before `1.0.0`; they were not each run against the pre-fix code first. Two realistic multi-paragraph answers had already shown the command problem on the pre-fix code (they came back unchecked, not wrong). Final corpus: 55 correct answers never called wrong, 20 wrong answers caught with the right slip, 3 realistic multi-paragraph answers (2 verified, 1 caught), and a later turn with a new base file not read with the old override.
+
+**1.0.1, same day.** The demo's production turn ("Run `docker compose -f docker-compose.yml up -d`; the override is still applied, so `DEBUG` stays `1`") made no claim on 1.0.0: a clause starting with "Run" made the whole sentence an instruction. 1.0.1 lets a clause that only runs a compose command through. A missed claim, not a false one.
+
+**Demo.** 10 scenarios, 51 lines, two runs byte-identical.
+
+**STEP 6b.** Run three times: on `df5b412` (first push), on `4a1f006` (tagged `1.0.0`) and on `309c56c` (tagged `1.0.1`). Each `git clone --depth 1` was byte-identical to the work copy, built with 0 diagnostics, passed every test, measured 100.00% lines and functions, linted 0 and produced the captured demo output. The vault folder was made with `vault-git.sh init`. `vault-git.sh check ComposeMergeClaimKit`: **OK** (git data at `~/dev/vault-gitdirs/iOS-Tasks__Portfolio-Projects__ComposeMergeClaimKit.git`).
+
+**7a — llm-ecosystem-demo, scenario 112** (`68ef867`, pushed, `9f6f2a8..68ef867`). One route (`compose-merge-host`, $0.85/$3.40 per million, priced explicitly), scripted replies, `TokenMeterKit`, one `MergeLedger`.
+- Answer 1 (base `8080:8000`, `LOG_LEVEL: info`, `DEBUG: "0"`; override `8081:8000`, `DEBUG: "1"`; "with both files `api` publishes `8081` instead of `8080`, and `LOG_LEVEL` is gone"): `ComposeClaimKit` returns `noClaims`. `ComposeMergeClaimKit` says **wrong**, 2 claims (`listReplaced`, `mappingReplaced`). The rewrite is **verified**, 3 of 3.
+- Production follow-up (`docker compose -f docker-compose.yml up -d`, "the override is still applied, so `DEBUG` stays `1`"): **wrong**, 1 claim (`overrideLoadedWithFile`). The rewrite (`DEBUG` is `0`, only `8080`) is **verified**, 2 of 2.
+- Ledger: 4 reviews, 8 claims, 3 flagged, 0 repeated.
+- Metered **$0.00137785**; running total **$0.30750515 across one hundred and twelve scenarios** (exactly $0.3061273 + $0.00137785).
+- Output 2038 lines (2016 + 21 scenario lines + 1 pricing row); two runs identical this time, timing line included. Build 0 diagnostics, lint 0 (117 files). `Package.resolved` gained only `compose-merge-claim-kit` at `1.0.1`; `Package.swift` says `from: "1.0.1"`.
+- README: package count, table row, scenario 112 section (including the 1.0.1 note), total, build/run counts. About text updated (112 packages, 112 scenarios, $0.30750515).
+- **Fresh-clone check:** `git clone` of `main`, identical to the work tree; a build with the package checkouts copied had 0 diagnostics; the run output was identical to the capture; lint 0 (117 files). Vault mirror fast-forwarded to `68ef867`.
+
+**7b — ai-chat-app** (`5dc2775`, pushed, `86760cf..5dc2775`): **`mergeCheck` does real work.**
+- **Where it runs.** Post-model, after `composeCheck`, on the text the user will see (`PostModelPipeline+ComposeMergeCheck.swift`, static, no network).
+- **History.** Earlier answers are replayed through one `MergeLedger`, so files shown earlier count for a later answer and a claim stated again after a note is marked as said again.
+- **No refusal.** A misread merge gets a note under the bubble ("Compose merge check: ..."), kept out of the text, the cache and the history. Outcomes: `.ran` / `.noOp` / `.skipped` (a withheld answer).
+- **One mistake, one note.** A test asserts that a wrong merge answer gets only the merge note (`composeCheck`, `yamlCheck` and `entrypointCheck` leave it alone), and that a correct merge answer naming `localhost:8080` and `localhost:8081` gets no compose note either (the advisor's interplay concern: judged against the override fragment alone, `8080` is not published). On this gate `ComposeClaimKit` found no claim in either.
+- **Stage table.** `PipelineStage.mergeCheck` maps to `ComposeMergeClaimKit`, title "Compose file merges"; the stage-table test is at 114 packages. One entry in `ChatBubble.reviewNotes`.
+
+Gates (documented command, `name=iPhone 17 Pro` on iOS 27.2 (`BD64BAD5`), DerivedData `/tmp/aichatapp-coverage-dd`). `/tmp` had been cleared since 11-20 (no DerivedData at all), so the first run resolved all packages from the SwiftPM cache.
+- The first full run: 1461 tests in 223 suites with **1 issue**, 24/24 UI. The failing expectation was mine: the correct-merge test expected "3 claims checked, 3 hold", and the `localhost` sentence is a fourth claim, which holds. The test now says 4; the stage was not changed.
+- The second full run: `xcodegen generate` clean, `swiftlint --strict` 0 violations (169 files), 0 compiler warnings (the `appintentsmetadataprocessor` notice only). **1461 tests in 223 suites, all passing.** 7 new: 6 `ComposeMergeCheckStageTests`, plus 1 render test. **24/24 UI tests**, `** TEST SUCCEEDED **`. The log shows `ComposeMergeClaimKit ... @ 1.0.1`.
+- Coverage **97.61% (16869/17282)**, a full run, against 97.61% (16841/17254) on 11-20 (97.6102% against 97.6064%): **the gate is met**. `PostModelPipeline+ComposeMergeCheck.swift` 24/24, `PostModelPipeline.swift` 237/237, `PipelineStage+Catalog.swift` 243/243, `ChatBubble.swift` 57/57 (all 100.00%). `ChatView.swift` 78.50% (588/749), unchanged.
+- Secrets scan before commit: 0 keys in the staged diff. No `Secrets.xcconfig` in the /tmp clone (it built from the placeholder).
+
+README: status rows, package count (114; 110 doing real work), a "Compose file merges" section, the package-count history line (114 on 2026-11-23), the Layout count, and a new "What was learned the hard way" entry: a merge answer shows two compose files and only the merge stage should speak; the `localhost:8080`/`localhost:8081` test is the alarm if `ComposeClaimKit` ever reads the last fenced file as the whole project. About text: 114 packages, 1461 unit tests.
+
+**Clean-clone check:** `git clone` of `main` from GitHub (`5dc2775`) into a scratch folder, identical to the work tree (excluding `.git` and the generated project), no `Secrets.xcconfig`. `xcodegen generate` was clean and `swiftlint --strict` gave 0 (169 files). The documented `xcodebuild ... test` ran on a new DerivedData (`/tmp/aichatapp-verify-1123`, seeded with the package checkouts; the log shows `ComposeMergeClaimKit ... @ 1.0.1`): **1461 tests in 223 suites passed, 24/24 UI tests, `** TEST SUCCEEDED **`** first time, 0 compiler warnings. Vault mirror: `main` ref fetched to `5dc2775`; the working tree stays on another session's `fix/ui-polish-picker-diagnostics-settings`.
+
+**Maintenance** (next in line from 11-20: `claim-decontextualizer-kit`, `answerability-kit`). Fresh clones, Swift 6.4.2:
+- `claim-decontextualizer-kit` (`3753640`, public): 0 diagnostics, **52 tests in 9 suites** (Swift Testing), **100.00%** lines (452), functions (82) and regions (206), `swiftlint --strict` 0 (9 files), tags `1.0.0` and `1.0.1`. README (52 tests, 100.00%) and About: match.
+- `answerability-kit` (`db1192d`, public): 0 diagnostics, **49 tests in 8 suites**, **100.00%** lines (358), functions (77) and regions (180) on the 9 files with code (`Seams.swift` holds only protocols), lint 0 (12 files), tag `1.0.0`. **Fixed:** the README's Quality table said "50 tests in 9 suites"; it now says 49 in 8 (`4248507`, pushed; vault mirror fast-forwarded). About: matches.
+
+Coverage was filtered by `/private/tmp/.../Sources/<Target>`. Next in line, in series order (first mention in this log): `morphology-match-kit`, `evidence-sensitivity-kit`.
+
+**Harness notes.** The Write tool's hook failed with "Invalid AP..." on every call, as on 11-12; every file was written with Bash heredocs and python replace scripts. GateGuard asked for facts before the first Bash command and before two scratch deletes (new directory names were used instead). The development copy lived in `/tmp/llmrun-1123/work` and was synced into the vault folder with `rsync` before each commit, so no build ran inside iCloud.
+
+**Still open:** for `ComposeMergeClaimKit`:
+- `extends`, `include`, profiles, `COMPOSE_FILE` (a conversation that sets it is unchecked) and `--project-directory` are not read.
+- `env_file:` contents are not read; a variable that may come from one is unchecked.
+- Variables in images, commands or values, and port ranges, make claims about them unchecked.
+- Volumes, secrets and configs are merged by target but not claimed about yet.
+- Statements come from a fixed lexicon; a sentence before any command in an answer that runs compose with `-f` somewhere is unchecked.
+- A service must be named unless only one service fits; "it" does not carry a variable or port claim.
+
+Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL semantics for `SQLClaimKit`; no GitHub Release object for `yaml-claim-kit` 1.0.0 or `sql-claim-kit` 1.1.1; DockerfileClaimKit 1.0.1 candidate; EntrypointClaimKit 1.0.2 candidate. The cloud trigger has created no run session since 11-12 (cron `0 8 * * *` UTC); Rajat may want to look at it.
+
+**Next candidates:**
+1. Compose `command:`/`entrypoint:` claims, reusing `EntrypointClaimKit`'s model with `docker compose create` + `docker inspect` as the oracle (carried from 11-20).
+2. Volume and bind-mount claims across merged files (which source ends up at `/app`, where a relative path resolves), on today's merge engine.
+3. Carried: `EXPOSE`/`-p` claims for `docker run`; `git check-ignore -v` transcripts.
+
+**Repos:**
+- https://github.com/rajatslakhina/compose-merge-claim-kit (today's package, `1.0.1`, public; local `Portfolio Projects/ComposeMergeClaimKit`, `vault-git.sh check` OK)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 112, `68ef867`)
+- https://github.com/rajatslakhina/ai-chat-app (`mergeCheck`, 1461 tests, 24/24 UI, 97.61%; `5dc2775`)
