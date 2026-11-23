@@ -5886,3 +5886,28 @@ Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL 
 - https://github.com/rajatslakhina/compose-merge-claim-kit (today's package, `1.0.1`, public; local `Portfolio Projects/ComposeMergeClaimKit`, `vault-git.sh check` OK)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 112, `68ef867`)
 - https://github.com/rajatslakhina/ai-chat-app (`mergeCheck`, 1461 tests, 24/24 UI, 97.61%; `5dc2775`)
+
+## 2026-11-23 — ComposeMergeClaimKit 1.0.2; a clause that names one file needs a strong merge cue (follow-up to the 11-23 entry, no new package)
+
+*Same session. After the entry above was pushed, a final advisor review listed three correct sentences the merge cues let through. All three reproduced on 1.0.1 as wrong findings, and so did a fourth of the same shape:*
+- "The base file still uses `myapp:1.0`; the override swaps in `myapp:dev`." (`earlierFileWins`)
+- "In the base file, `DEBUG` is still `0`." (`earlierFileWins`)
+- "`docker-compose.yml` now publishes only `8080`." (`overrideNotLoaded`)
+- "In the override, `web` no longer publishes `8080`." (`listReplaced`)
+
+The cause: the last fix round before 1.0.0 added "still", "now", "keeps" and "no longer" to the merge cues, and that one list also lifted the skip for a clause that names one file. **1.0.2** (tag and GitHub Release at `0d34581`) splits it: only strong cues ("with both files", "merged", "together", "with the override", "the result") lift a clause that names one file; the wider list still lets a sentence be called wrong for a slip one file alone reproduces. The four sentences and "The override file still sets `DEBUG` to `1`." are probes now.
+
+**Gates (1.0.2):** 50 tests in 12 suites (348 parameterized cases); **100.00% lines (1976) and functions (420)** on all 20 files, regions 99.20% (1366/1377), `--no-parallel`; `swiftlint --strict` 0 in 22 files; demo output unchanged (md5 `697a5791`). A `git clone --depth 1` of `main` was byte-identical, built with 0 diagnostics, passed 50 tests, measured 100.00% lines and functions, linted 0 and produced the same demo output. Probe corpus: 60 correct answers never called wrong, 20 wrong answers caught with the right slip.
+
+**Corrections to the entry above:**
+- The first parity run did not match "199": it matched **79 of 80** (the hand cases plus 50 generated); the miss was a later file's empty `web:`. After the fix, 80 of 80, and then 200 of 200 with 170 generated cases.
+- The kit's lint covers **22 files**, not 21 (20 library files, the demo and `Package.swift`), from SwiftLint's own summary line.
+- "`ComposeClaimKit` finds no claim (it reads one file at a time)" was a guess at the reason. Checked in a scratch test on `ComposeClaimKit` 1.0.1: when the override has `build:` or `image:` it leaves the claims unchecked ("the answer merges several compose files, which this reader does not do"); when the override has neither, it reads the base file. Neither makes a note. The demo and app READMEs now say that, and the app's interplay test uses a `build: .` override.
+
+**llm-ecosystem-demo** (`1e62cfa`, pushed, `68ef867..1e62cfa`): `Package.swift` says `from: "1.0.2"`, `Package.resolved` pins 1.0.2; output identical to the capture except the TraceKit timing line (1 ms against 0 ms); lint 0 (117 files). A fresh clone was identical, built with 0 diagnostics and ran with the same output (timing line aside). README: scenario 112 notes 1.0.2 and drops the guessed reason.
+
+**ai-chat-app** (`df8d12b`, pushed, `5dc2775..df8d12b`): `project.yml` says `from: 1.0.2`, and the interplay test's override now has `build: .`. Gate (documented command, `BD64BAD5`, `/tmp/aichatapp-coverage-dd`): the log shows `ComposeMergeClaimKit ... @ 1.0.2`. **1461 tests in 223 suites, all passing**, **24/24 UI tests**, `** TEST SUCCEEDED **`, 0 compiler warnings, `swiftlint --strict` 0 (169 files), coverage **97.61% (16869/17282)**, unchanged from the 1.0.1 run. Secrets scan: 0 keys. README: status rows name 1.0.2; the merge section and the "What was learned" entry give `ComposeClaimKit`'s checked behaviour instead of the guess. **Clean-clone check:** `git clone` of `main` (`df8d12b`), identical to the work tree, no `Secrets.xcconfig`, `xcodegen` clean, lint 0 (169 files). The first gate run on it (`/tmp/aichatapp-verify-1123`, `@ 1.0.2`) passed 1461 tests in 223 suites and then failed one UI test, `SettingsUITests.testANullLimitRendersAsUnlimitedRatherThanZero`, with no assertion: the runner logged "Restarting after unexpected exit, crash, or test timeout", and the host's `testmanagerd` crashed at 18:25:51 together with `rapportd` and `activityawardsd` (load average ~800-950, with at least three more simulators booted by other sessions). The same tree had passed 24/24 in the main gate. A second run of the documented command on the same clone passed: **1461 tests in 223 suites, 24/24 UI tests, `** TEST SUCCEEDED **`**, 0 compiler warnings, no restarts. Vault mirror: `main` ref fetched to `df8d12b`.
+
+**Still open, added:** a follow-up turn that shows only a revised override has no base file in that turn, so its claims are unchecked (the turn is read with its own files only).
+
+**Repos:** https://github.com/rajatslakhina/compose-merge-claim-kit (`1.0.2`), https://github.com/rajatslakhina/llm-ecosystem-demo (`1e62cfa`), https://github.com/rajatslakhina/ai-chat-app (`df8d12b`).
