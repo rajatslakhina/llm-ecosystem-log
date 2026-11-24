@@ -5911,3 +5911,95 @@ The cause: the last fix round before 1.0.0 added "still", "now", "keeps" and "no
 **Still open, added:** a follow-up turn that shows only a revised override has no base file in that turn, so its claims are unchecked (the turn is read with its own files only).
 
 **Repos:** https://github.com/rajatslakhina/compose-merge-claim-kit (`1.0.2`), https://github.com/rajatslakhina/llm-ecosystem-demo (`1e62cfa`), https://github.com/rajatslakhina/ai-chat-app (`df8d12b`).
+
+## 2026-11-24 — ComposeCommandClaimKit shipped; ai-chat-app checks what an answer says a compose service runs
+
+*The 11-24 run (Tuesday). The session's first command ran at 15:15 IST. No other run session of this series was active, and nothing was pending: no package folder or repo was newer than the 11-23 log (the newest other repos, `hybrid-inference-router-*` and `agent-migration-loop-article-demo`, belong to other series). The cloud trigger was read with `RemoteTrigger`: `list_runs` still shows no run session since 2026-11-12, so research started fresh. `vault-git.sh check LLMEcosystemDemo` printed FAIL once at the start ("git cannot open") and OK on the next call seconds later and again before 7a; nothing was changed. `gh repo create rajatslakhina/compose-command-claim-kit --public` went through as a single command, and so did each push, the tag push and `gh release create`.*
+
+**Topics considered.** Searches this run:
+- LLM and agent engineering news this month: newsletter digests only, several with names that appear nowhere else; it did not steer the pick.
+- Docker Compose `command:` with `&&` not working, shell form, `sh -c`. The forum threads and how-to pages agree that a string `command` runs without a shell; one widely copied guide says the `&&` "is passed to the program as a literal argument", which the oracle shows is wrong (compose drops it and everything after it).
+- Compose volume and bind-mount merging (the 11-23 log's second candidate): kept in line.
+
+**Chosen:** the 11-23 log's first candidate, compose `command:`/`entrypoint:` claims, with `docker compose create` + `docker inspect` as the oracle. It is the most common way a compose file "looks right" and does something else, and models get it wrong in both directions (a shell that is not there, an argument that is not passed).
+
+**Package built: `ComposeCommandClaimKit`** (https://github.com/rajatslakhina/compose-command-claim-kit, public; tag and GitHub Release `1.0.0` at `8a91963`). Depends on `EntrypointClaimKit` 1.0.1 and `DockerfileClaimKit` 1.0.0 for a Dockerfile's `ENTRYPOINT`/`CMD`.
+- **Reading.** A compose YAML subset (from ComposeMergeClaimKit's reader, with literal and folded block scalars read exactly from the raw lines, comment-like lines included). `.env` blocks and `export` lines give the variables; one Dockerfile shown gives the image config for `build:` services. A Kubernetes manifest anywhere in the conversation, or a paragraph about Kubernetes, reads nothing (there `command:` replaces the ENTRYPOINT).
+- **Compose's reading.** Substitution first (`$VAR`, `${VAR:-d}`, `:?`, `$$`), then go-shellwords splitting: stops at an unquoted `;` `&` `|` `<` `>`, refuses `(`/`)` and open quotes, keeps `$(...)` and backtick spans literal. Then the daemon's merge: a non-empty compose `entrypoint:` drops the image's `CMD`; an empty one keeps it; an empty `command:` falls back to it; `docker compose run` arguments replace `command:`; `run --entrypoint` is split into words and drops `command:`.
+- **Claims.** Stated command lines ("`web` runs `npm run dev`", with the sentence's own `docker compose run`, or "This runs ..." after a code block with one), variable values ("`$GREETING` becomes `hi`"), 15 stated rules (at most one denial per clause), and five file-line problems on the answer's last compose file (a string cut at `&&`, a string compose refuses, a `$VAR` set only in `environment:`, `sh -c` handed its script in pieces, a list item that is a whole command line). A file the question already showed is not checked again, so quoting the user's broken file is not flagged.
+- **Judging.** A stated line that differs is wrong only when one of 10 misreadings reproduces it exactly (`stringRunsInShell`, `listItemSplit`, `entrypointKeepsImageCmd`, `shellEntrypointTakesCommand`, `commandReplacesEntrypoint`, `runAppendsToCommand`, `runEntrypointKeepsCommand`, `scriptTakesFollowingWords`, `variableReadInContainer`, `dollarDollarExpanded`); three more slips come only from rules (`operatorBecomesArgument`, `emptyEntrypointDropsCmd`, `emptyCommandClears`). An unseen image ENTRYPOINT makes a claim that needs it unchecked; a claim naming the command holds. `CommandLedger` (actor) keeps files across turns and marks repeats.
+
+**Oracle findings new to this series** (Docker Compose 2.32.4, colima, scratch images):
+- `command: cd /app && npm start` is `["cd", "/app"]`: the rest is dropped **unread** (`echo a && echo "b` loads fine). `echo a 2>&1` is `echo a`; a word starting with a digit before `>` goes with it, `"a"2>f` keeps `a2`.
+- Unquoted `(` or `)` and a trailing backslash make compose refuse the file ("invalid command line string"); `$(a b)` is one literal word; backticks keep spaces and `;` but strip quotes.
+- Substitution happens before splitting: `${A:-a;b}` cuts the command at the `;`.
+- `entrypoint: ""` runs the image's `CMD` alone; `entrypoint: ["/sbin/tini", "--"]` with no `command:` runs `/sbin/tini --` and nothing else; `command: []` runs the image's `CMD`; an image with neither gets "no command specified".
+- `docker compose run --entrypoint "/bin/sh -c" web "echo hi"` is `/bin/sh -c "echo hi"` (split, unlike `docker run`), and `--entrypoint` drops the service's `command:`.
+
+**Gates (1.0.0).**
+- Build: 0 diagnostics, tests included.
+- Tests: **67 tests in 14 suites** (Swift Testing), including 260 parity cases.
+- Coverage: **100.00% lines (2334) and functions (520) on all 24 library files**, regions 99.93% (1498/1499), `--no-parallel`.
+- Lint: `swiftlint --strict` 0 (26 files).
+- Parity: `Scripts/parity.py` ran 260 cases (one service each, six `FROM scratch` images, `.env`, shell variables, 97 `docker compose run` lines; 10 refused files, 10 "no command specified") through `config`, `create`/`run -d` and `docker inspect`; the kit gives the same Path and Args for all 260. The first generation skipped 7 cases: my generator indented block scalars wrongly; fixed, 0 skipped.
+- Linux (`swift:6.0`, colima, source piped by tar): 0 diagnostics, 67 tests, demo md5 identical (`3d2ae1dc`).
+
+**Probing before tagging.** 39 correct answers stayed quiet and 12 wrong ones were caught with the right slip on the first green run. An advisor review then traced, by reading the reader, eleven correct shapes that would be flagged; all eleven were run first and **all eleven failed on the pre-fix code**: "No, Compose doesn't run `command` through a shell." (bare "no" made two denials), "Because `command` isn't run in a shell, `&&` has no special meaning", a clause with two denials, "With no shell involved, everything after `&&` is dropped", a before/after answer whose quoted broken file got a file-line note, an answer re-quoting the question's file, a `REDIS_PASSWORD: ${REDIS_PASSWORD}` passthrough, "the whole script, `&&` included, is passed to `sh` as an argument", an unquoted paraphrase `sh -c npm install && npm start` read as `listItemSplit`, a manifest in the question, and "There, `command` replaces the image's `ENTRYPOINT`" in a Kubernetes paragraph. Fixed and kept as probes before the tag: bare "no" is not a denial, leading "No,"/"Yes," are dropped, a rule needs at most one denial, file lines only on the last answer file not already in the question, passthrough values skipped, script/list wording excluded from the operator rule, the unquoted `sh -c` paraphrase matches, Kubernetes paragraphs state no rules. Final corpus: 50 correct answers never flagged, 12 wrong answers caught.
+
+**Demo.** 10 scenarios, 59 lines, two runs byte-identical.
+
+**STEP 6b.** Run twice: on `4810fbf` (first push) and on `8a91963` (tagged `1.0.0`, a README line count corrected to the measured 2334 in between). Each clone was byte-identical to the work copy, built with 0 diagnostics, passed 67 tests (260 parity cases), measured 100.00% lines and functions, linted 0 and produced the captured demo output. The vault folder was made with `vault-git.sh init`. `vault-git.sh check ComposeCommandClaimKit`: **OK** (git data at `~/dev/vault-gitdirs/iOS-Tasks__Portfolio-Projects__ComposeCommandClaimKit.git`).
+
+**7a — llm-ecosystem-demo, scenario 113** (`1b177c3`, pushed, `1e62cfa..1b177c3`). One route (`compose-command-host`, $0.90/$3.60 per million, priced explicitly), scripted replies, `TokenMeterKit`, one `CommandLedger`.
+- Question with `command: npm install && npm start`; answer 1 says compose runs `command` through a shell: `EntrypointClaimKit` returns `noClaims`; `ComposeCommandClaimKit` says **wrong**, 2 claims, both `stringRunsInShell`. The `sh -c` rewrite is **verified**, 2 of 2.
+- tini follow-up: `entrypoint: ["/sbin/tini", "--"]` and "the image's `CMD` still runs": **wrong**, 2 claims (`entrypointKeepsImageCmd`). The rewrite with `command:` is **verified**, 2 of 2.
+- Ledger: 4 reviews, 8 claims, 4 flagged, 0 repeated.
+- Metered **$0.0014724**; running total **$0.30897755 across one hundred and thirteen scenarios** (exactly $0.30750515 + $0.0014724).
+- Output 2060 lines (2038 + 21 scenario lines + 1 pricing row); two runs identical, timing line included. Clean build of the intermediates (the copied cache's "stale file" notices removed): 0 diagnostics. Lint 0 (118 files). `Package.resolved` gained only `compose-command-claim-kit` at `1.0.0`.
+- README: package count, table row, scenario 113 section, total, build/run counts. About text updated (113 packages, 113 scenarios, $0.30897755).
+- **Fresh-clone check:** identical tree; a build with the package checkouts copied had 0 diagnostics; output identical to the capture; lint 0 (118 files). Vault mirror fast-forwarded to `1b177c3`.
+
+**7b — ai-chat-app** (`f5e9c40`, pushed, `df8d12b..f5e9c40`): **`commandCheck` does real work.**
+- **Where it runs.** Post-model, after `mergeCheck`, on the text the user will see (`PostModelPipeline+ComposeCommandCheck.swift`, static, no network).
+- **History.** Earlier answers are replayed through one `CommandLedger`, each with its question, so a file shown earlier counts and a claim stated again after a note is marked.
+- **No refusal.** A misread command gets a note under the bubble ("Compose command check: ..."), kept out of the text, the cache and the history. Outcomes: `.ran` / `.noOp` / `.skipped` (a withheld answer).
+- **One mistake, one note.** Checked before the stage was written, in a scratch package: on the scenario-113 answers, a Dockerfile-plus-override answer and a two-file answer, `EntrypointClaimKit`, `ComposeClaimKit` and `ComposeMergeClaimKit` make no note (the merge kit leaves the command claims unchecked, and on the two-file answer the new kit is the one that stays unchecked while the merge kit verifies). A stage test asserts a shell-reading answer gets only `commandNote` (no compose, merge, YAML, Dockerfile or container-command note).
+- **Stage table.** `PipelineStage.commandCheck` maps to `ComposeCommandClaimKit`, title "Compose service commands"; the stage-table test is at 115 packages. One entry in `ChatBubble.reviewNotes`.
+
+Gates (documented command, `name=iPhone 17 Pro` on iOS 27.2 (`BD64BAD5`), DerivedData `/tmp/aichatapp-coverage-dd`, 118 package manifests present). Baseline: `main` was `df8d12b`, the commit the 11-23 gate measured (1461 tests, 97.61% (16869/17282)); it was not re-measured.
+- A targeted run first (`ComposeCommandCheckStageTests`, `PipelineStageTests`, `AnswerRowRenderTests`): 34 tests in 3 suites, all passing, on the first try.
+- `swiftlint --strict` found 8 line-length violations in the new doc comments (the app's limit is 110); rewrapped, 0 violations (170 files).
+- The full run: `xcodegen generate` clean, 0 compiler warnings (the `appintentsmetadataprocessor` notice only). **1469 tests in 224 suites, all passing.** 8 new: 7 `ComposeCommandCheckStageTests`, plus 1 render test. **24/24 UI tests**, `** TEST SUCCEEDED **`. The log shows `ComposeCommandClaimKit ... @ 1.0.0`.
+- Coverage **97.61% (16897/17310)**, a full run, against 97.61% (16869/17282) on 11-23 (97.6141% against 97.6103%): **the gate is met**. `PostModelPipeline+ComposeCommandCheck.swift` 24/24, `PostModelPipeline.swift` 238/238, `PipelineStage+Catalog.swift` 245/245, `ChatBubble.swift` 58/58 (all 100.00%). `ChatView.swift` 78.50% (588/749), unchanged.
+- Secrets scan before commit: 0 keys in the staged diff. No `Secrets.xcconfig` in the /tmp clone (it built from the placeholder).
+
+README: status rows, package count (115; 111 doing real work), a "Compose service commands" section, the package-count history line (115 on 2026-11-24), the Layout count, and a new "What was learned the hard way" entry: a command check must not flag the file the user asked about (answers quote it to explain it), and a bare "no" made two denials. About text: 115 packages, 1469 unit tests.
+
+**Clean-clone check:** `git clone` of `main` from GitHub (`f5e9c40`) into a scratch folder, identical to the work tree (excluding `.git` and the generated project), no `Secrets.xcconfig`. `xcodegen generate` was clean and `swiftlint --strict` gave 0 (170 files). The documented `xcodebuild ... test` ran on a new DerivedData (`/tmp/aichatapp-verify-1124`, seeded with the package checkouts; the log shows `ComposeCommandClaimKit ... @ 1.0.0`): **1469 tests in 224 suites passed, 24/24 UI tests, `** TEST SUCCEEDED **`** first time, 0 compiler warnings. Vault mirror: `main` ref fetched to `f5e9c40`; the working tree stays on another session's `fix/ui-polish-picker-diagnostics-settings`.
+
+**Maintenance** (next in line from 11-23: `morphology-match-kit`, `evidence-sensitivity-kit`). Fresh clones, Swift 6.4.2:
+- `morphology-match-kit` (`3a41e04`, public): 0 diagnostics, **81 tests in 13 suites**, **100.00%** lines (244), functions (64) and regions (129) on the 5 library files (two targets), `swiftlint --strict` 0 (7 files), tag `1.0.0`. README (81 tests, 100.00% on 5 files) and About: match.
+- `evidence-sensitivity-kit` (`11658e1`, public): 0 diagnostics, **43 tests in 7 suites**, **100.00%** lines (251), functions (46) and regions (112) on the 7 library files, lint 0 (9 files), tags `1.0.0` and `1.0.1`. README (43 tests, 100.00% on 7 files, no dependencies in the core) and About: match.
+
+Nothing needed fixing. Next in line, in series order (first mention in this log): `source-independence-kit`, `temporal-validity-kit`.
+
+**Harness notes.** GateGuard asked for facts before the first Bash command and before every new file (each first `Write` was denied once; a placeholder first call kept the real content to one send), and before an `rsync --delete` and a `commit --amend` (both replaced by a plain sync and a second commit). The Write and Edit hooks failed with "Invalid AP..." on existing files all run, and on new files from about 16:30; sources were written through bundles applied by a small script, and later through quoted heredocs. The built-in check refused two heredocs that held both backticks and `$(...)`; the probe cases went into files instead. The development copy lived in `/tmp/llmrun-1124/work` and was synced into the vault folder before each commit. The 30 probe containers and five `cck-*` images made this run were removed at the end.
+
+**Still open** for `ComposeCommandClaimKit`:
+- One compose file at a time: a base-plus-override answer leaves stated command lines unchecked (merging is ComposeMergeClaimKit's).
+- A variable the conversation never sets makes a command unchecked (or a caveat when the stated value is the `environment:` one).
+- An unseen image ENTRYPOINT leaves claims that need it unchecked.
+- Backtick shapes beyond spaces, operators and quotes are unfollowed; `healthcheck.test` and lifecycle hook commands are not read.
+- Claims come from a fixed lexicon; "ran"/past tense and many paraphrases are not read.
+
+Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL semantics for `SQLClaimKit`; no GitHub Release object for `yaml-claim-kit` 1.0.0 or `sql-claim-kit` 1.1.1; DockerfileClaimKit 1.0.1 candidate; EntrypointClaimKit 1.0.2 candidate. The cloud trigger has created no run session since 11-12 (cron `0 8 * * *` UTC); Rajat may want to look at it.
+
+**Next candidates:**
+1. Volume and bind-mount claims across merged files (which source ends up at `/app`, where a relative path resolves, named volume against bind mount), on the merge engine (carried from 11-23).
+2. `healthcheck` claims: `test:` string (runs in a shell, unlike `command:`), `CMD` against `CMD-SHELL`, intervals and `start_period`, with `docker inspect` as the oracle.
+3. Carried: `EXPOSE`/`-p` claims for `docker run`; `git check-ignore -v` transcripts.
+
+**Repos:**
+- https://github.com/rajatslakhina/compose-command-claim-kit (today's package, `1.0.0`, public; local `Portfolio Projects/ComposeCommandClaimKit`, `vault-git.sh check` OK)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 113, `1b177c3`)
+- https://github.com/rajatslakhina/ai-chat-app (`commandCheck`, 1469 tests, 24/24 UI, 97.61%; `f5e9c40`)
