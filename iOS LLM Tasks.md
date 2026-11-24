@@ -6003,3 +6003,23 @@ Carried: `git check-ignore -v` transcripts; Cargo/Composer readings; PostgreSQL 
 - https://github.com/rajatslakhina/compose-command-claim-kit (today's package, `1.0.0`, public; local `Portfolio Projects/ComposeCommandClaimKit`, `vault-git.sh check` OK)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 113, `1b177c3`)
 - https://github.com/rajatslakhina/ai-chat-app (`commandCheck`, 1469 tests, 24/24 UI, 97.61%; `f5e9c40`)
+
+## 2026-11-24 — ComposeCommandClaimKit 1.0.1; four more correct sentences stay quiet (follow-up to the 11-24 entry, no new package)
+
+*Same session. After the entry above was pushed, a final advisor review traced four correct answers to a note by reading the 1.0.0 reader. All four were run first against the published 1.0.0, with the 11-24 question as context, and **all four were flagged**:*
+- "Use `command: bash -c "npm install && npm start"`, which runs `npm install && npm start` in bash." (the `, which` clause bound to the question's file: `stringRunsInShell`)
+- "In the Dockerfile, the shell-form `CMD` runs `npm install && npm start` through `/bin/sh -c`." (`stringRunsInShell`)
+- "Setting `entrypoint` drops the image's `CMD` while your `command` is still appended." (the keep cue matched "is still": `entrypointKeepsImageCmd`)
+- `environment: PORT: "3000"` with `command: node server.js --port ${PORT:-3000}` (an `environmentVariable` caution saying the value is empty)
+
+**1.0.1** (tag and GitHub Release at `55e501d`): a stated command line is not read when its clause names `CMD`, `ENTRYPOINT` or a Dockerfile, or when the sentence shows a `command:`/`entrypoint:` setting inline; a rule is not read when the clause also states the other side of its pair; the caution skips a name written with a default. The four sentences are probes now.
+
+**Gates (1.0.1):** 0 diagnostics; **68 tests in 15 suites** (260 parity cases unchanged); **100.00% lines (2369) and functions (536)** on all 24 files, regions 99.93% (1522/1523), `--no-parallel`; `swiftlint --strict` 0 in 26 files; demo output unchanged (md5 `3d2ae1dc`). Linux (`swift:6.0`): 0 diagnostics, 68 tests, same demo md5; container DNS had stopped resolving ("Could not resolve host: github.com", shown by SwiftPM only as `GitShellError` code 128), and `--dns 1.1.1.1` fixed it. A `git clone --depth 1 --branch 1.0.1` was byte-identical, built with 0 diagnostics, passed 68 tests, measured 100.00% lines and functions, linted 0 and produced the same demo output. Probe corpus: 54 correct answers never flagged, 12 wrong answers caught.
+
+**llm-ecosystem-demo** (`82790ae`, pushed, `1b177c3..82790ae`): `Package.swift` says `from: "1.0.1"`, `Package.resolved` pins 1.0.1 (`55e501d`); output identical to the 1.0.0 capture, all 2060 lines, timing line included; lint 0 (118 files). A fresh clone was identical, built with 0 diagnostics and ran with the same output. README: scenario 113 notes 1.0.1. Vault mirror fast-forwarded to `82790ae`.
+
+**ai-chat-app** (`6f6aee8`, pushed, `f5e9c40..6f6aee8`): `project.yml` says `from: 1.0.1`. Gate (documented command, `BD64BAD5`, `/tmp/aichatapp-coverage-dd`): the log shows `ComposeCommandClaimKit ... @ 1.0.1`. **1469 tests in 224 suites, all passing**, **24/24 UI tests**, `** TEST SUCCEEDED **`, 0 compiler warnings, `swiftlint --strict` 0 (170 files), coverage **97.61% (16897/17310)**, unchanged from the 1.0.0 run. Secrets scan: 0 keys. README: status rows name 1.0.1. **Clean-clone check:** `git clone` of `main` (`6f6aee8`), identical to the work tree, no `Secrets.xcconfig`, `xcodegen` clean, lint 0 (170 files); the documented test command on a new DerivedData (`/tmp/aichatapp-verify-1124b`, `@ 1.0.1`) passed 1469 tests in 224 suites and 24/24 UI tests, `** TEST SUCCEEDED **`, first time. Vault mirror: `main` ref fetched to `6f6aee8`; the working tree stays on `fix/ui-polish-picker-diagnostics-settings`.
+
+**Left in /tmp** (the disk is 90% full): `/tmp/llmrun-1124` (work copies, clones, the demo's build cache) and the DerivedData folders `/tmp/aichatapp-verify-1124` and `/tmp/aichatapp-verify-1124b`. `/tmp/aichatapp-coverage-dd` is the gate's own and stays.
+
+**Repos:** https://github.com/rajatslakhina/compose-command-claim-kit (`1.0.1`), https://github.com/rajatslakhina/llm-ecosystem-demo (`82790ae`), https://github.com/rajatslakhina/ai-chat-app (`6f6aee8`).
