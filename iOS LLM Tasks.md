@@ -6227,3 +6227,36 @@ Nothing needed fixing. Next in line, in series order: `exploration-channel-kit` 
 - https://github.com/rajatslakhina/compose-volume-claim-kit (today's package, `1.0.0`, public; local `Portfolio Projects/ComposeVolumeClaimKit`, `vault-git.sh check` OK)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 115, `7f4049e`)
 - https://github.com/rajatslakhina/ai-chat-app (`volumeCheck`, 1484 tests, 24/24 UI, 97.62%; `79dce68`)
+
+## 2026-11-26 — ComposeVolumeClaimKit 1.0.1; a phrase must be about a volume (follow-up to the 11-26 entry, no new package)
+
+*Same session. A closing review asked for correct sentences written by reading the reader's code, not by the author of the probes. Traced through 1.0.0 as pushed, **all eight got a wrong note**, so 1.0.1 was built, tagged and pinned in both consumers before the report. The entry above describes 1.0.0; corrections to it are at the end.*
+
+**What 1.0.0 got wrong.** A phrase counted wherever it stood in the clause, so nothing tied the verb to a volume:
+- "`docker compose down` removes the database container, but the data stays in the volume" (the container is removed) and "`down` removes the containers, so anything written outside a volume is lost": `namedVolumeLostOnDown`.
+- "After `docker compose up --build`, the container is recreated with the same volume" and "The rebuilt image has the new packages and the anonymous volume hides them": `volumeRefreshedOnRebuild`.
+- "`external: true` tells compose that another tool creates the volume": `externalCreatedIfMissing`.
+- "`pgdata:/x` keeps the files in Docker's storage on the host": read as a bind mount ("on the host").
+- "With `--project-directory .`, relative paths resolve from the current directory" (true there): `relativeToWorkingDirectory`.
+- "With a bind mount, the container path is populated with whatever is in the host folder": `bindSeededFromImage`.
+
+**1.0.1** (`bd62380`, tag and GitHub Release `1.0.1`). `down`, `-v` and rebuild phrases bind to their subject, or for a verb that takes one, their object (`Scan+Binding.swift`; a short list after "and", as in "containers and volumes", still belongs to the object). "Except", "outside" and comparisons leave `down` statements alone. Statements about seeding need the image named. "On the host" and "on your machine" no longer mark a bind mount, since named volumes are on the host too. Path statements next to `--project-directory` are skipped, and statements about another tool creating an external volume are left alone. A second round, written against the new binding before tagging (15 correct, 3 wrong), found two false positives ("removes everything except the volumes", "Unlike `down -v`, plain `down` keeps the volume") and two misses ("removes your containers and volumes", "gets rid of the volumes"); all four were fixed. Two more probes cover branches the coverage gate found ("get deleted", a short list after "and" followed by "so").
+
+**Gates (1.0.1).** 0 warnings and 0 errors with tests built; **47 tests in 11 suites**; **100.00% lines (1733) and functions (442) on all 23 library files**, regions 99.55% (1106/1111); `swiftlint --strict` 0. Parity is unchanged: 144 of 144. Corpus: **34 wrong answers each get exactly their note; 67 correct + 25 reviewed + 1 owned elsewhere get none; 12 other-domain sentences state nothing.** Cross-kit, rerun: the 34 wrong and 92 correct get no note from the seven existing Docker and YAML kits, and 0 of 2,027 other-kit strings get one from this kit. The kit demo's output is unchanged. **Linux** (`swift:6.0` on colima, source piped by tar): 0 diagnostics, 47 tests, demo md5 identical to macOS (`80e7c603`). **STEP 6b on `1.0.1`:** `git clone --branch 1.0.1` byte-identical, 0 diagnostics, 47 tests, 100.00% lines and functions, lint 0, demo identical.
+
+**Consumers on 1.0.1.**
+- **7a, llm-ecosystem-demo** (`3d485bd`, pushed, `7f4049e..3d485bd`): `from: "1.0.1"`, `swift package update compose-volume-claim-kit` (only that pin moved, to `bd62380`); output unchanged, two runs identical, README note on the bump. The demo's baseline was measured this time rather than taken from the 11-25 log: `9e781f9` built and run gives **2083 lines**, and against it the new output adds 26 lines (23 scenario lines, the `compose-volume-host` pricing row, the new TOTAL row and total line) and drops 2 (the old TOTAL row and total line). Fresh build of `3d485bd`: identical tree, 0 diagnostics, output identical.
+- **7b, ai-chat-app** (`aca9b75`, pushed, `79dce68..aca9b75`): `project.yml` `from: 1.0.1`, `xcodegen generate`; the documented gate passed **first time: 1484 tests in 226 suites, 24/24 UI tests, `** TEST SUCCEEDED **`**, 0 compiler warnings, the log shows `ComposeVolumeClaimKit ... @ 1.0.1`; coverage taken straight after the run: **97.62% (16954/17367)**, the same as on 1.0.0; `swiftlint --strict` 0 (172 files); 0 keys in the staged diff and the commit. README rows, a 1.0.1 note in "Compose volumes". Clean clone of `aca9b75`: identical to the work tree, no `Secrets.xcconfig`, `xcodegen` clean, lint 0, and the documented test command passed: **1484 tests, 24/24 UI, `** TEST SUCCEEDED **`**, the log showing `@ 1.0.1`. Vault mirrors: AIChatApp `main` ref at `aca9b75` (working tree untouched), LLMEcosystemDemo fast-forwarded to `3d485bd`.
+
+**Corrections to the entry above (1.0.0):**
+- The second probe batch found **6** wrong-answer misses and 1 false positive, not 7 misses and 1.
+- Parity's first run had 5 mismatches: **4** from the duplicate-target rule and **1** from the trailing-colon mapping (`- ./d:/x:`, now `missingType`), not all five from the duplicate-target rule.
+- `nocopy` was probed on `/usr/local/share` (which holds `keyrings` and `man` in `postgres:18`), not on `/usr/local/bin`; the 1.0.0 README said the same and 1.0.1 corrects it.
+- "Written before the reader" holds for the first 23 wrong and 34 correct answers only; the rest were written while testing. The 1.0.0 README and the corpus comment said it of all of them; 1.0.1 corrects both.
+- Linux was not run for 1.0.0; it was run for 1.0.1 (above).
+- `~/dev/vol-oracle-1126`, `-1126b` and `-1126c` (the colima probe folders, a few files each) were left in place: removing them needs a recursive delete, which this unattended run does not do.
+
+**Repos after the follow-up:**
+- https://github.com/rajatslakhina/compose-volume-claim-kit (`1.0.1`, `bd62380`)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (`3d485bd`, pins 1.0.1)
+- https://github.com/rajatslakhina/ai-chat-app (`aca9b75`, pins 1.0.1)
