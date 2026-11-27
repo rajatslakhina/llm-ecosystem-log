@@ -6344,3 +6344,15 @@ README: status rows, package count (118; 114 doing real work), a "Compose secret
 - https://github.com/rajatslakhina/compose-command-claim-kit (`1.0.2`)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 116, `f484da2`)
 - https://github.com/rajatslakhina/ai-chat-app (`secretCheck`, 1492 tests, 24/24 UI, 97.63%; `0d403f6`)
+
+## 2026-11-27 — corrections to the 11-27 entry (same session, no new package)
+
+*A closing review checked the entry's figures against the run's own output.*
+
+- **ComposeCommandClaimKit 1.0.2's measurement** was 3 of 63, not "2 of 61": on HealthcheckClaimKit's 61 correct answers plus the two app sentences, 1.0.1 put a note on 3 (one of the 61, `bothVariableForms`, and both app sentences), 1.0.2 on none. The kit's README (`a1df362`), the 1.0.2 release notes and the memory note were corrected.
+- **The blind base rate** was written with paths and fields as plain text, which the path, place and `mode` readers do not read. The 40 correct answers were rerun with paths, fields, variables, keys and commands put in backticks by a script: still **0 of 40 flagged** (7 gave a path, place or `mode` claim and 5 a rule claim, all holding), and 6 of 10 wrong answers caught (W07 now too). README note in `70cbfd8` (docs only; the tag stays at `00c98b6`).
+- **Linux** was first run before `BlindProbes` existed (38 tests). It was rerun on the `1.0.0` clone: 0 diagnostics, **39 tests** pass, demo md5 identical to macOS.
+- Recall, stated plainly: 5 of 10 blind wrong answers (6 of 10 backticked) and 14 of 25 aimed wrong answers; the two aimed rounds flagged 23 of 23 and 27 of 30 correct answers before their fixes. One `content:` mistake in an answer's own file and prose yields two findings.
+- App coverage (97.63%) was measured on the work-tree run; the clean-clone run checked tests only.
+- Maintenance covered two repos (`exploration-channel-kit`, `label-return-kit`); next in line are the two after them in series order.
+- **Left in /tmp:** `/tmp/llm-run-2026-11-27` (work copy, clones, parity and cross-kit scratch packages, the demo's builds) and the gate's `/tmp/aichatapp-coverage-dd`. Pending checkpoint branches: `pending/wip-2026-11-27` in the ComposeSecretClaimKit vault repo, and `pending/secret-kit-scenario-116` / `pending/secret-check-stage` in the /tmp clones only (their content is on `main`).
