@@ -6260,3 +6260,87 @@ Nothing needed fixing. Next in line, in series order: `exploration-channel-kit` 
 - https://github.com/rajatslakhina/compose-volume-claim-kit (`1.0.1`, `bd62380`)
 - https://github.com/rajatslakhina/llm-ecosystem-demo (`3d485bd`, pins 1.0.1)
 - https://github.com/rajatslakhina/ai-chat-app (`aca9b75`, pins 1.0.1)
+
+## 2026-11-27 — ComposeSecretClaimKit shipped; ComposeCommandClaimKit 1.0.2; ai-chat-app checks what an answer says about compose secrets
+
+*The 11-27 run (Friday). The session's first command ran at 14:56 IST. `list_task_runs` showed only this session running, and nothing was pending: no package folder or repo was newer than the 11-26 log. Another pipeline's session created `first-token-budget-kit` at 14:16 IST (its staging folder `../2026-11-27-ttft-staging` was written at 14:56); it is not part of this series and was left alone. The cloud trigger (`trig_01MnTjezfYvsJ8BQSdb2PX9m`) still has no run session after 2026-11-12 (`RemoteTrigger list_runs`), so research started fresh. `vault-git.sh check` printed OK for `LLMEcosystemDemo` and `AIChatApp`. The Mac had rebooted that morning (load 25-165), so yesterday's `/tmp` folders and the app's DerivedData were gone.*
+
+**Topics considered.**
+- Docker Compose `secrets:`/`configs:` mistakes (search: the `/run/secrets/<name>` default, configs mounted anywhere, `uid`/`gid`/`mode`, `external: true`, build-time vs runtime secrets, name mismatches).
+- LLM output verification this month (Elastic's atomic claim checking, the COVE code-based verification paper): deterministic checks after one model call remain the pattern; nothing changed the pick.
+- The 11-26 log's candidates: ComposeCommandClaimKit 1.0.2 (done today as a fix, below), stated healthcheck values and timing, compose `configs:`/`secrets:` claims.
+
+**Chosen:** compose secrets and configs (the third carried candidate). Answers carry Swarm's picture (secrets need Swarm, are encrypted, sit on a tmpfs, `external` just works) or an env-var picture into plain compose, and no kit in the series reads them. Named `compose-secret-claim-kit`.
+
+**Package built: `ComposeSecretClaimKit`** (https://github.com/rajatslakhina/compose-secret-claim-kit, public; tag and GitHub Release `1.0.0` at `00c98b6`). No dependencies; the compose YAML subset, interpolation and the sentence/clause reader were copied from ComposeVolumeClaimKit and adapted.
+- **Rules (16):** `secretAsEnvironmentVariable`, `secretsNeedSwarm`, `externalWorksWithCompose`, `secretEncrypted`, `secretOnTmpfs`, `declarationGrantsAll`, `missingFileCreated`, `contentForSecrets`, each with the counterpart that holds.
+- **Stated values:** the container path an answer gives a declaration (found by the path's last part: key, `name:`, a grant's target, or the key with an extension under `/run/`; per service when the sentence names one); the default place for a kind; whether `uid`/`gid`/`mode` take effect (copied values yes, `file:` sources no, and a restrictive claim about a decimal `mode: 400` is wrong).
+- **File problems (11):** `undefinedSecret`, `undefinedConfig`, `missingSource`, `conflictingSources`, `contentOnSecret`, `externalWithoutSwarm` (quiet in a Swarm conversation), `mountConflict`, `duplicateTarget`, `modeOnFileSource`, `decimalMode`, `fileVariableMismatch` (a `*_FILE` value under `/run/secrets/` that no secret of that service is mounted on).
+- `SecretLedger` (actor) keeps the scene across turns and marks repeats.
+
+**Oracle findings new to this series** (Docker Compose 2.32.4, Engine 27.4, colima, `alpine:3.20`):
+- A secret lands at `/run/secrets/<target or key>` (a leading `./` dropped, `sub/x` makes a folder), a config at `/<target or key>`; absolute targets as written for both; `name:` never changes the path.
+- `file:` sources are read-only bind mounts that keep the host file's owner and mode; `uid`/`gid`/`mode` are ignored. `environment:` secrets and `content:`/`environment:` configs are copied in (0444, root) and do apply `uid`/`gid`/`mode`, although compose prints "secrets `uid`, `gid` and `mode` are not supported, they will be ignored" for both. Root can write a copied value.
+- `mode: 400` (no leading 0) gives `0620`; `0400` and `0o440` are octal.
+- `environment:` reads the shell or `.env`; an unset variable stops `up`.
+- `external: true` passes `config` and stops `up` ("unsupported external secret/config"); an unreferenced external declaration is pruned. `config` refuses an undefined reference, no source, two sources, `content:` under a secret. A missing `file:` passes `config` and fails at `up`.
+- One path twice: of one kind the last grant wins; a secret and a config keep the secret when both are files, the config when both are copies, and `up` fails with "device or resource busy" when one is a file and the other a copy.
+
+**Parity.** `Scripts/parity.py` ran **132 compose files** (52 by hand, 80 generated) through `config`, `up` and `stat` inside each container; every declaration's content is its own key. Every refusal (at `config` and at `up`) and every file's path, source, mode, uid and gid match the kit; it matched on the first run except for the facts the run discovered (the collision rules and `./` targets), which were added first.
+
+**Probing (the expensive part).** The corpus was written before the reader: 33 wrong, 33 correct, 12 other-domain; the first build passed it except for a probe-helper bug. Then three agent checks:
+- **Review 1** (read the code, aimed): 23 correct answers, **all 23 flagged**; 25 wrong, 24 missed. All false positives fixed ("no" counted as a negation, `_FILE` per sentence, source-side and comparison words, Swarm conversations, instructions after "If ...,", list markers, quoted text, app-side path verbs, per-service paths, stems only under `/run/`, config keys kept apart from secret keys); 14 misses fixed, 11 open.
+- **Review 2** (aimed, on the fixed reader): 30 correct answers, **27 flagged**. Fixed structurally: blockquotes, table rows and items under a Swarm or denying lead line state nothing; single and curly quotes and reported speech ("tutorials say", "compose warns") are someone else's words; Swarm is taken from the question; `_FILE` across the whole answer; trailing-slash directories are not default places; ambiguous ownership verbs dropped; paths in comparisons or equal to a host source skipped.
+- **Blind base rate** (an agent that read neither code nor probes): **0 of 40 ordinary correct answers flagged**, 5 of 10 wrong caught (misses: paths without backticks, claims inside instructions, a missing file named only in the question). On the advisor's rule (0-1 flags: tag; 3+: cut rule families) this cleared 1.0.0. All three sets are in the test suite.
+
+**Gates (1.0.0).** Build 0 warnings/errors with tests; **39 tests in 11 suites**; **100.00% lines (1928) and functions (466) on all 23 library files**, regions 98.93% (1206/1219), `--no-parallel`; `swiftlint --strict` 0 (SwiftLint 0.63.2). Linux `swift:6.0` on colima: 0 diagnostics, tests pass, demo md5 identical. Cross-kit: the nine Docker/YAML kits give no note to any correct probe (one wrong probe, `mode: 0440`, also gets YAMLClaimKit's octal caveat); this kit gives a note to 0 of 4,714 strings from those kits' tests and 1 of 5,977 ai-chat-app strings (its own render test). **Demo:** 11 answers and a 4-turn ledger, 28 lines, two runs identical.
+
+**STEP 6b.** `git clone --branch 1.0.0`: byte-identical to the work copy, 0 diagnostics, 39 tests, 100.00% lines and functions, lint 0, demo identical. The vault folder was made with `vault-git.sh init` (a pre-tag checkpoint sits on its `pending/wip-2026-11-27` branch; `main` is one commit); `vault-git.sh check ComposeSecretClaimKit`: **OK** (git data at `~/dev/vault-gitdirs/iOS-Tasks__Portfolio-Projects__ComposeSecretClaimKit.git`).
+
+**ComposeCommandClaimKit 1.0.2** (carried since 11-25; `243ed9f`, tag and Release `1.0.2`). Its operator and variable rules now state nothing when the sentence names a healthcheck, its exec form, `CMD-SHELL` or `test:`, or when the bound service has a `healthcheck:` but no `command:`/`entrypoint:`. HealthcheckClaimKit's 61 correct answers: 2 notes from 1.0.1, 0 from 1.0.2; all 12 wrong probes keep their notes. 70 tests in 16 suites, 100.00% lines (2379) and functions (540), lint 0, demo byte-identical to 1.0.1; README and gates SVG updated. Fresh `--branch 1.0.2` clone: identical, same numbers. Vault mirror fast-forwarded.
+
+**7a — llm-ecosystem-demo, scenario 116** (`f484da2`, pushed, `3d485bd..f484da2`). One route (`compose-secret-host`, $0.80/$3.20 per million, priced explicitly), scripted replies, `TokenMeterKit`, one `SecretLedger`.
+- Answer 1 (env var, `/api_key`, `mode: 0400` on a `file:` secret, encryption): **wrong**, 4 claims; ComposeVolumeClaimKit `noClaims`. Rewrite **verified**, 3 of 3; the scene prints each secret's path.
+- External follow-up: **wrong**, 2 claims (file line + rule); rewrite **verified**, 1.
+- Ledger: 4 reviews, 10 claims, 6 flagged, 0 repeated. Metered **$0.0012192**; total **$0.3129165 across one hundred and sixteen scenarios** ($0.3116973 + $0.0012192).
+- Also pins ComposeCommandClaimKit 1.0.2: scenario 114 now runs it on the healthcheck rewrite (`unchecked`, no note).
+- Baseline measured: `3d485bd` gives 2107 lines; new output **2133** (+28: 24 scenario lines, pricing row, new total row and line, the scenario 114 line; −2: old total row and line). Two runs identical. 0 warnings, lint 0. `Package.resolved` moved only `compose-command-claim-kit` (1.0.1 → 1.0.2) and added `compose-secret-claim-kit` 1.0.0. README (counts, table row, scenario 114 note, scenario 116 section) and About text updated.
+- **Fresh-clone check:** identical tree; a full fresh build (every package resolved from GitHub) had 0 diagnostics; output identical to the capture, 2133 of 2133 lines. Vault mirror fast-forwarded to `f484da2`.
+
+**7b — ai-chat-app** (`0d403f6`, pushed, `aca9b75..0d403f6`): **`secretCheck` does real work.**
+- **Where it runs.** Post-model, after `volumeCheck`, on the text the user will see (`PostModelPipeline+SecretCheck.swift`, static, no network). Earlier answers are replayed through one `SecretLedger`, each with its question.
+- **No refusal.** A misread secret gets a note under the bubble ("Secret check: ..."), kept out of the text, the cache and the history. Outcomes: `.ran` / `.noOp` / `.skipped` (a withheld answer).
+- **One mistake, one note.** Before wiring, 5,977 string literals from the app's tests and sources went through the kit: one note, the new render test's own string. A stage test asserts the env-var/encryption answer gets only `secretNote` in the full pipeline (118 stages).
+- **Stage table.** `PipelineStage.secretCheck` maps to `ComposeSecretClaimKit`, title "Compose secrets"; the stage-table test is at 118 packages. One entry in `ChatBubble.reviewNotes`.
+- **ComposeCommandClaimKit 1.0.2 pinned** (`project.yml` `from: 1.0.2`); a stage test checks the healthcheck exec-form sentence gets no `commandNote`.
+
+Gates (documented command, `name=iPhone 17 Pro` on iOS 27.2 (`BD64BAD5`), DerivedData `/tmp/aichatapp-coverage-dd`, rebuilt from scratch after the morning reboot). Baseline: `main` was `aca9b75` (1484 tests, 97.62% (16954/17367) on 11-26); not re-measured.
+- `xcodegen generate` clean; `swiftlint --strict`: 0 violations (173 files), after wrapping three doc comments to the app's 110-column limit; 0 compiler warnings (the `appintentsmetadataprocessor` notice only); 0 build errors.
+- **First full run: 1492 tests in 227 suites, all passing** (8 new: 7 `SecretCheckStageTests`, 1 render test); **24/24 UI tests**, `** TEST SUCCEEDED **`; the log shows `ComposeSecretClaimKit ... @ 1.0.0` and `ComposeCommandClaimKit ... @ 1.0.2`.
+- Coverage taken straight after it: **97.63% (16982/17395)**, against 97.62% (16954/17367) on 11-26: **the gate is met**. `PostModelPipeline+SecretCheck.swift` 24/24, `PostModelPipeline.swift` 241/241, `PipelineStage+Catalog.swift` 251/251, `ChatBubble.swift` 62/62.
+- Secrets scan: 0 keys in the staged diff and in `0d403f6`. No `Secrets.xcconfig` in the /tmp clone (it built from the placeholder).
+
+README: status rows, package count (118; 114 doing real work), a "Compose secrets" section, the 1.0.2 note in the 11-25 lesson, the package-count history line, the Layout count, and a new "What was learned the hard way" entry: aimed reviews find false positives faster than a checker converges, so measure a blind base rate (0 of 40 here) before wiring, and fix aimed findings structurally. About text: 118 packages, 1492 unit tests.
+
+**Clean-clone check:** `git clone` of `main` from GitHub (`0d403f6`) into a scratch folder, identical to the work tree (excluding `.git` and the generated project), no `Secrets.xcconfig`. `xcodegen generate` clean, `swiftlint --strict` 0 (173 files). The documented `xcodebuild ... test` on the same DerivedData path (packages reused; the log shows `ComposeSecretClaimKit ... @ 1.0.0`): **1492 tests in 227 suites passed, 24/24 UI tests, `** TEST SUCCEEDED **`** first time, 0 compiler warnings. Vault mirror: `main` ref fetched to `0d403f6`; the working tree stays on another session's `fix/ui-polish-picker-diagnostics-settings`.
+
+**Maintenance** (next in line from 11-26). Fresh clones, Swift 6.4.2:
+- `exploration-channel-kit` (`d025f7b`): 0 diagnostics, **79 tests in 17 suites**, **100.00%** lines (481), lint 0, tag `1.0.0`; README (79 in 17) and About match.
+- `label-return-kit` (`54d5436`): 0 diagnostics, **59 tests in 18 suites**, **100.00%** lines (480), lint 0, tag `1.0.0`; README (59 in 18) and About match.
+
+**Harness notes.** GateGuard asked for facts before the first Bash command only. Files were written with quoted heredocs and Python edit scripts throughout. The probe folders `~/dev/secret-oracle-1127/` (compose files, parity cases) were left in place; all their containers were brought down.
+
+**Still open** for `ComposeSecretClaimKit`: paths written without backticks; a claim joined to a correct one in one clause or inside an instruction; "should be available as"; answers that also name a `*_FILE` variable; list items whose topic is only in the lead line; paths next to "host" or a negation; "config files"; one place given to both kinds; a missing file named only in the question; build-time secrets (no BuildKit here); writability and host-file changes; two findings (file line + rule) for one `content:` mistake. Two aimed rounds each found many false positives, so unusual correct phrasings may still get a note (the app shows it as a note, never a refusal).
+
+**Open across the series:** stated healthcheck values and timing; Cargo/Composer readings; PostgreSQL semantics for `SQLClaimKit`; no GitHub Release object for `yaml-claim-kit` 1.0.0 or `sql-claim-kit` 1.1.1; DockerfileClaimKit 1.0.1 and EntrypointClaimKit 1.0.2 candidates; the silent cloud trigger.
+
+**Next candidates:**
+1. Stated healthcheck values per service and timing ("unhealthy after about 30 s"), on HealthcheckClaimKit's `effective()` merge.
+2. ComposeSecretClaimKit 1.0.1: bare (unbackticked) container paths and claims inside instructions, the blind check's misses.
+3. Compose `profiles:` claims (which services `up` starts, `--profile`, `depends_on` pulling in a profiled service).
+
+**Repos:**
+- https://github.com/rajatslakhina/compose-secret-claim-kit (today's package, `1.0.0`, public; local `Portfolio Projects/ComposeSecretClaimKit`, `vault-git.sh check` OK)
+- https://github.com/rajatslakhina/compose-command-claim-kit (`1.0.2`)
+- https://github.com/rajatslakhina/llm-ecosystem-demo (scenario 116, `f484da2`)
+- https://github.com/rajatslakhina/ai-chat-app (`secretCheck`, 1492 tests, 24/24 UI, 97.63%; `0d403f6`)
